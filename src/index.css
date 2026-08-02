@@ -1,0 +1,129 @@
+@import "tailwindcss";
+
+@theme {
+  --animate-music-bar: music-bar 1s ease-in-out infinite alternate;
+  @keyframes music-bar {
+    0% { height: 20%; }
+    50% { height: 100%; }
+    100% { height: 40%; }
+  }
+
+  --animate-blob: blob 10s infinite alternate;
+  --animate-blob-reverse: blob 15s infinite alternate-reverse;
+  --animate-blob-slow: blob 20s infinite alternate;
+  @keyframes blob {
+    0% { transform: translate(0px, 0px) scale(1); }
+    33% { transform: translate(30px, -50px) scale(1.1); }
+    66% { transform: translate(-20px, 20px) scale(0.9); }
+    100% { transform: translate(0px, 0px) scale(1); }
+  }
+}
+
+/* Hide scrollbar */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+:root {
+  --accent: #22c55e;
+}
+
+/* Переопределение акцентного цвета Tailwind */
+.text-green-500 { color: var(--accent) !important; }
+.bg-green-500 { background-color: var(--accent) !important; }
+.border-green-500 { border-color: var(--accent) !important; }
+.accent-green-500 { accent-color: var(--accent) !important; }
+.hover\:text-green-500:hover { color: var(--accent) !important; }
+.hover\:bg-green-500:hover { background-color: var(--accent) !important; }
+.focus\:ring-green-500:focus { --tw-ring-color: var(--accent) !important; }
+
+/* Простая светлая тема */
+.light-theme-wrapper {
+  background-color: #f4f4f5 !important;
+  color: #18181b !important;
+}
+.light-theme-wrapper .bg-black {
+  background-color: #f4f4f5 !important;
+}
+.light-theme-wrapper .bg-black\/60 {
+  background-color: rgba(244, 244, 245, 0.8) !important;
+}
+.light-theme-wrapper .bg-black\/30 {
+  background-color: rgba(244, 244, 245, 0.5) !important;
+}
+.light-theme-wrapper .bg-black\/20 {
+  background-color: rgba(0, 0, 0, 0.05) !important;
+}
+.light-theme-wrapper .bg-zinc-900 {
+  background-color: #ffffff !important;
+}
+.light-theme-wrapper .from-zinc-800 {
+  --tw-gradient-from: #e4e4e7 var(--tw-gradient-from-position) !important;
+}
+.light-theme-wrapper .to-zinc-900 {
+  --tw-gradient-to: #ffffff var(--tw-gradient-to-position) !important;
+}
+.light-theme-wrapper .bg-zinc-800 {
+  background-color: #e4e4e7 !important;
+}
+.light-theme-wrapper .bg-zinc-800\/50 {
+  background-color: rgba(228, 228, 231, 0.5) !important;
+}
+.light-theme-wrapper .text-white {
+  color: #18181b !important;
+}
+.light-theme-wrapper .text-zinc-400 {
+  color: #52525b !important;
+}
+.light-theme-wrapper .text-zinc-500 {
+  color: #71717a !important;
+}
+.light-theme-wrapper .border-white\/10 {
+  border-color: rgba(0, 0, 0, 0.1) !important;
+}
+.light-theme-wrapper .border-white\/5 {
+  border-color: rgba(0, 0, 0, 0.05) !important;
+}
+.light-theme-wrapper .hover\:bg-white\/10:hover {
+  background-color: rgba(0, 0, 0, 0.05) !important;
+}
+.light-theme-wrapper .hover\:bg-white\/20:hover {
+  background-color: rgba(0, 0, 0, 0.1) !important;
+}
+.light-theme-wrapper .hover\:bg-white\/5:hover {
+  background-color: rgba(0, 0, 0, 0.03) !important;
+}
+.light-theme-wrapper .bg-white\/10 {
+  background-color: rgba(0, 0, 0, 0.05) !important;
+}
+.light-theme-wrapper .bg-white\/5 {
+  background-color: rgba(0, 0, 0, 0.02) !important;
+}
+.light-theme-wrapper .bg-zinc-700 {
+  background-color: #d4d4d8 !important;
+}
+
+/* Sliders Light Theme */
+.light-theme-wrapper .progress-bg {
+  background-color: #e4e4e7 !important;
+}
+.light-theme-wrapper .progress-fill {
+  background-color: #000000 !important;
+}
+.light-theme-wrapper .group:hover .progress-fill {
+  background-color: var(--accent) !important;
+}
+.light-theme-wrapper .slider-thumb {
+  background-color: #000000 !important;
+}
+
+/* Hide player on short screens */
+@media (max-height: 480px) {
+  .player-container {
+    display: none !important;
+  }
+}

@@ -1,0 +1,30 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Fix App",
+			"type": "shell",
+			"command": "node fix_app.js"
+		},
+		{
+			"label": "Fix App Final",
+			"type": "shell",
+			"command": "node fix_app_final.cjs"
+		},
+		{
+			"label": "Fix App Latest",
+			"type": "shell",
+			"command": "node fix_app_latest.cjs"
+		},
+		{
+			"label": "Fix App py",
+			"type": "shell",
+			"command": "python fixer.py"
+		},
+		{
+			"label": "Fix final",
+			"type": "shell",
+			"command": "node fixer.cjs"
+		}
+	]
+}
