@@ -1,10 +1,7 @@
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
-use std::io::{self, Write};
-
-mod playlistparser;
-use playlistparser::PlaylistParser;
+type SearchResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
@@ -59,18 +56,16 @@ pub struct SpotifyGuestClient {
 impl SpotifyGuestClient {
     pub fn new() -> Self {
         let client = reqwest::Client::builder()
-            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:153.0) Gecko/20100101 Firefox/153.0")
+            .user_agent(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:153.0) Gecko/20100101 Firefox/153.0",
+            )
             .build()
             .unwrap();
 
         Self { client }
     }
 
-    pub fn get_http_client(&self) -> &reqwest::Client {
-        &self.client
-    }
-
-    async fn fetch_access_token(&self) -> Result<String, Box<dyn Error>> {
+    async fn fetch_access_token(&self) -> SearchResult<String> {
         let embed_url = "https://open.spotify.com/embed/playlist/37i9dQZF1DXcBWIGoYBM5M";
         let html = self.client.get(embed_url).send().await?.text().await?;
 
@@ -80,10 +75,10 @@ impl SpotifyGuestClient {
                 return Ok(token_match.as_str().to_string());
             }
         }
-        Err("Не удалось извлечь accessToken из HTML".into())
+        Err("Could not extract Spotify accessToken from HTML".into())
     }
 
-    async fn fetch_client_token(&self) -> Result<String, Box<dyn Error>> {
+    async fn fetch_client_token(&self) -> SearchResult<String> {
         let payload = serde_json::json!({
             "client_data": {
                 "client_version": "1.2.96.301.g6a125c73",
@@ -111,11 +106,11 @@ impl SpotifyGuestClient {
         if let Some(token) = res["granted_token"]["token"].as_str() {
             Ok(token.to_string())
         } else {
-            Err("Не удалось сгенерировать client-token".into())
+            Err("Could not generate Spotify client-token".into())
         }
     }
 
-    pub async fn fetch_guest_auth(&self) -> Result<GuestAuth, Box<dyn Error>> {
+    pub async fn fetch_guest_auth(&self) -> SearchResult<GuestAuth> {
         let access_token = self.fetch_access_token().await?;
         let client_token = self.fetch_client_token().await.unwrap_or_default();
 
@@ -125,7 +120,11 @@ impl SpotifyGuestClient {
         })
     }
 
-    pub async fn search(&self, auth: &GuestAuth, query: &str) -> Result<Vec<SearchResultItem>, Box<dyn Error>> {
+    pub async fn search(
+        &self,
+        auth: &GuestAuth,
+        query: &str,
+    ) -> SearchResult<Vec<SearchResultItem>> {
         let url = "https://api-partner.spotify.com/pathfinder/v2/query";
 
         let payload = serde_json::json!({
@@ -237,6 +236,7 @@ impl SpotifyGuestClient {
             }
         }
 
+        results.sort_by_key(search_order);
         Ok(results)
     }
 
@@ -343,7 +343,10 @@ impl SpotifyGuestClient {
             }
             "Playlist" => {
                 let name = item["name"].as_str().unwrap_or("").to_string();
-                let owner = item["ownerV2"]["data"]["name"].as_str().unwrap_or("").to_string();
+                let owner = item["ownerV2"]["data"]["name"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string();
                 let cover_url = item["images"]["items"]
                     .as_array()
                     .and_then(|i| i.first())
@@ -369,68 +372,19 @@ impl SpotifyGuestClient {
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
-    let spotify = SpotifyGuestClient::new();
-
-    print!("Получение анонимных токенов... ");
-    io::stdout().flush()?;
-    let auth = spotify.fetch_guest_auth().await?;
-    println!("Успешно!");
-
-    loop {
-        println!("\nВыберите режим:");
-        println!("1. Поиск (Search)");
-        println!("2. Парсинг плейлиста (Playlist Parser)");
-        println!("3. Выход (Exit)");
-        print!("> ");
-        io::stdout().flush()?;
-
-        let mut choice = String::new();
-        io::stdin().read_line(&mut choice)?;
-
-        match choice.trim() {
-            "1" => {
-                print!("Введите поисковый запрос: ");
-                io::stdout().flush()?;
-
-                let mut query = String::new();
-                io::stdin().read_line(&mut query)?;
-                let query = query.trim();
-
-                if !query.is_empty() {
-                    match spotify.search(&auth, query).await {
-                        Ok(items) => {
-                            println!("\n--- Результаты поиска (JSON) ---");
-                            println!("{}", serde_json::to_string_pretty(&items)?);
-                        }
-                        Err(e) => println!("Ошибка поиска: {}", e),
-                    }
-                }
-            }
-            "2" => {
-                print!("Введите Spotify Playlist ID: ");
-                io::stdout().flush()?;
-
-                let mut playlist_id = String::new();
-                io::stdin().read_line(&mut playlist_id)?;
-                let playlist_id = playlist_id.trim();
-
-                if !playlist_id.is_empty() {
-                    println!("Парсинг треков плейлиста...");
-                    match PlaylistParser::extract_playlist(&spotify, &auth, playlist_id).await {
-                        Ok(tracks) => {
-                            println!("\n--- Извлечённые треки ({}) ---", tracks.len());
-                            println!("{}", serde_json::to_string_pretty(&tracks)?);
-                        }
-                        Err(e) => println!("Ошибка парсинга плейлиста: {}", e),
-                    }
-                }
-            }
-            "3" | "exit" => break,
-            _ => println!("Неверный выбор, попробуйте снова."),
-        }
+fn search_order(item: &SearchResultItem) -> u8 {
+    match item {
+        SearchResultItem::Artist {
+            is_top_result: true,
+            ..
+        } => 0,
+        SearchResultItem::Track {
+            is_top_result: true,
+            ..
+        } => 1,
+        SearchResultItem::Track { .. } => 2,
+        SearchResultItem::Artist { .. } => 3,
+        SearchResultItem::Album { .. } => 4,
+        SearchResultItem::Playlist { .. } => 5,
     }
-
-    Ok(())
 }

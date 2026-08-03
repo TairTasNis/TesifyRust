@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -7,7 +7,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { Home, Search, Library as LibraryIcon, Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Mic, Plus, Music, X, Loader2, Maximize2, Minimize2, Youtube, Menu, PenSquare, Trash2, ArrowLeft, Heart, Check, User as UserIcon, Clock, Settings as SettingsIcon, BarChart2, RefreshCw, MessageSquare, Edit2, Languages, Link as LinkIcon, Download, AlignLeft, AlignCenter, AlignRight, Radio } from 'lucide-react';
-import { Track, Tab, Playlist, UserStats, Comment } from './types';
+import { Track, Tab, Playlist, UserStats, Comment, SearchSource, SearchResultItem } from './types';
 import { fetchSpotifyData } from './services/spotify';
 import AuthScreen from './components/AuthScreen';
 import { auth, db } from './services/firebase';
@@ -595,6 +595,9 @@ export default function App() {
 
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchSource, setSearchSource] = useState<SearchSource>('youtube');
+  const [searchPreviewPlaylist, setSearchPreviewPlaylist] = useState<Playlist | null>(null);
+  const [openingSearchCollectionId, setOpeningSearchCollectionId] = useState<string | null>(null);
 
   const [settingsSection, setSettingsSection] = useState<'customization' | 'account' | 'audio' | 'downloads' | 'about' | 'server'>('customization');
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'dark');
@@ -683,7 +686,7 @@ export default function App() {
     localStorage.setItem('audioMode', audioMode);
   }, [audioMode]);
 
-  const [searchResults, setSearchResults] = useState<Track[]>([]);
+  const [searchResults, setSearchResults] = useState<SearchResultItem[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState('');
 
@@ -717,6 +720,17 @@ export default function App() {
 
   // Add to Playlist Menu State
   const [trackMenuOpenId, setTrackMenuOpenId] = useState<string | null>(null);
+
+  const getPlaylistById = (playlistId: string | null) => {
+    if (!playlistId) return null;
+    return playlists.find(p => p.id === playlistId) || (searchPreviewPlaylist?.id === playlistId ? searchPreviewPlaylist : null);
+  };
+
+  const isSameTrack = (a: Track, b: Track) => (
+    a.id === b.id ||
+    (!!a.youtubeId && !!b.youtubeId && a.youtubeId === b.youtubeId) ||
+    (!!a.spotifyId && !!b.spotifyId && a.spotifyId === b.spotifyId)
+  );
 
   const [importTargetId, setImportTargetId] = useState<string | null>(null);
   const [isMoveMenuOpen, setIsMoveMenuOpen] = useState(false);
@@ -1012,7 +1026,7 @@ type SortField = 'default' | 'index' | 'title' | 'addedAt' | 'durationMs';
     setIsMoveMenuOpen(false);
   };
 
-  const currentPlayingPlaylist = playlists.find(p => p.id === currentPlayingPlaylistId) || null;
+  const currentPlayingPlaylist = getPlaylistById(currentPlayingPlaylistId);
   const currentTrackBase = currentTrackIndex >= 0 && currentPlayingPlaylist ? currentPlayingPlaylist.tracks[currentTrackIndex] : null;
   const currentTrack = overrideTrack || currentTrackBase;
 
@@ -1177,7 +1191,7 @@ type SortField = 'default' | 'index' | 'title' | 'addedAt' | 'durationMs';
 
   const preloadNextTrack = async () => {
     if (!currentPlayingPlaylistId) return;
-    const playlist = playlists.find(p => p.id === currentPlayingPlaylistId);
+    const playlist = getPlaylistById(currentPlayingPlaylistId);
     if (!playlist) return;
     if (currentTrackIndex === null || currentTrackIndex >= playlist.tracks.length - 1) return;
     
@@ -1222,14 +1236,14 @@ type SortField = 'default' | 'index' | 'title' | 'addedAt' | 'durationMs';
         fetch(`http://127.0.0.1:8000/stream?id=${youtubeId}&mode=${modeParam}`).catch(() => {});
         
         if (needsUpdate) {
-            setPlaylists(prev => prev.map(pl => {
-              if (pl.id === playlist.id) {
-                const newTracks = [...pl.tracks];
-                newTracks[currentTrackIndex + 1] = { ...nextTrack, youtubeId };
-                return { ...pl, tracks: newTracks };
-              }
-              return pl;
-            }));
+            const updateNextTrack = (pl: Playlist) => {
+              const newTracks = [...pl.tracks];
+              newTracks[currentTrackIndex + 1] = { ...nextTrack, youtubeId };
+              return { ...pl, tracks: newTracks };
+            };
+
+            setPlaylists(prev => prev.map(pl => pl.id === playlist.id ? updateNextTrack(pl) : pl));
+            setSearchPreviewPlaylist(prev => prev?.id === playlist.id ? updateNextTrack(prev) : prev);
         }
       }
     } catch (err) {
@@ -1258,17 +1272,17 @@ type SortField = 'default' | 'index' | 'title' | 'addedAt' | 'durationMs';
       }
       
       if (currentTrack && !currentTrack.durationMs && currentPlayingPlaylistId && isFiniteDur) {
-        setPlaylists(prev => prev.map(pl => {
-          if (pl.id === currentPlayingPlaylistId) {
-            const newTracks = [...pl.tracks];
-            const trackIndex = newTracks.findIndex(t => t.id === currentTrack.id);
-            if (trackIndex !== -1) {
-              newTracks[trackIndex] = { ...newTracks[trackIndex], durationMs: Math.floor(dur * 1000) };
-            }
-            return { ...pl, tracks: newTracks };
+        const updateTrackDuration = (pl: Playlist) => {
+          const newTracks = [...pl.tracks];
+          const trackIndex = newTracks.findIndex(t => t.id === currentTrack.id);
+          if (trackIndex !== -1) {
+            newTracks[trackIndex] = { ...newTracks[trackIndex], durationMs: Math.floor(dur * 1000) };
           }
-          return pl;
-        }));
+          return { ...pl, tracks: newTracks };
+        };
+
+        setPlaylists(prev => prev.map(pl => pl.id === currentPlayingPlaylistId ? updateTrackDuration(pl) : pl));
+        setSearchPreviewPlaylist(prev => prev?.id === currentPlayingPlaylistId ? updateTrackDuration(prev) : prev);
       }
     }
   };
@@ -1313,7 +1327,7 @@ type SortField = 'default' | 'index' | 'title' | 'addedAt' | 'durationMs';
   };
 
   const handlePlayPause = () => {
-    const playlist = currentPlayingPlaylist || playlists.find(p => p.id === 'favorites');
+    const playlist = currentPlayingPlaylist || getPlaylistById('favorites');
     if (currentTrackIndex === -1 && playlist && playlist.tracks.length > 0) {
       const sortedTracks = getSortedTracks(playlist.tracks);
       const firstTrack = sortedTracks[0];
@@ -1349,7 +1363,7 @@ const handleNext = () => {
     const nextT = userQueue[0];
     setUserQueue(prev => prev.slice(1));
 
-    const playlistForQueue = currentPlayingPlaylist || playlists.find(p => p.id === currentPlayingPlaylistId);
+    const playlistForQueue = currentPlayingPlaylist || getPlaylistById(currentPlayingPlaylistId);
     if (playlistForQueue) {
       const absoluteIndex = playlistForQueue.tracks.findIndex(t =>
         t.id === nextT.id || (t.youtubeId && nextT.youtubeId && t.youtubeId === nextT.youtubeId)
@@ -1370,7 +1384,7 @@ const handleNext = () => {
     setOverrideTrack(null);
   }
 
-  const playlist = currentPlayingPlaylist || playlists.find(p => p.id === 'favorites');
+  const playlist = currentPlayingPlaylist || getPlaylistById('favorites');
   if (!playlist || playlist.tracks.length === 0) return;
 
   const sortedTracks = getSortedTracks(playlist.tracks);
@@ -1412,7 +1426,7 @@ const handleNext = () => {
 };
 
   const handlePrev = () => {
-    const playlist = currentPlayingPlaylist || playlists.find(p => p.id === 'favorites');
+    const playlist = currentPlayingPlaylist || getPlaylistById('favorites');
     if (!playlist || playlist.tracks.length === 0) return;
     
     const sortedTracks = getSortedTracks(playlist.tracks);
@@ -1541,7 +1555,7 @@ const handleNext = () => {
     };
 
     const playTrack = async (index: number, playlistId: string) => {
-    const playlist = playlists.find(p => p.id === playlistId);
+    const playlist = getPlaylistById(playlistId);
     if (!playlist) return;
 
     let track = playlist.tracks[index];
@@ -1629,14 +1643,14 @@ const handleNext = () => {
     }
 
     if (needsUpdate) {
-      setPlaylists(prev => prev.map(pl => {
-        if (pl.id === playlistId) {
-          const newTracks = [...pl.tracks];
-          newTracks[index] = updatedTrack;
-          return { ...pl, tracks: newTracks };
-        }
-        return pl;
-      }));
+      const updatePlaylistTrack = (pl: Playlist) => {
+        const newTracks = [...pl.tracks];
+        newTracks[index] = updatedTrack;
+        return { ...pl, tracks: newTracks };
+      };
+
+      setPlaylists(prev => prev.map(pl => pl.id === playlistId ? updatePlaylistTrack(pl) : pl));
+      setSearchPreviewPlaylist(prev => prev?.id === playlistId ? updatePlaylistTrack(prev) : prev);
     }
 
     setIsPlaying(true);
@@ -1653,48 +1667,169 @@ const handleNext = () => {
     return ` • ${mins}мин`;
   };
 
+  const normalizeSpotifySearchResult = (item: any): SearchResultItem | null => {
+    if (item.type === 'artist') {
+      return {
+        type: 'artist',
+        source: 'spotify',
+        id: `spotify-artist-${item.id}`,
+        spotifyId: item.id,
+        name: item.name,
+        url: item.url,
+        imageUrl: item.avatar_url,
+        isTopResult: !!item.is_top_result
+      };
+    }
+
+    if (item.type === 'track') {
+      return {
+        type: 'track',
+        source: 'spotify',
+        id: `spotify-track-${item.id}`,
+        title: item.title,
+        artist: item.artist || 'Spotify',
+        url: '',
+        spotifyId: item.id,
+        spotifyUrl: item.url,
+        thumbnail: item.cover_url,
+        durationMs: item.duration_ms || undefined,
+        addedAt: Date.now(),
+        isTopResult: !!item.is_top_result
+      };
+    }
+
+    if (item.type === 'album') {
+      return {
+        type: 'album',
+        source: 'spotify',
+        id: `spotify-album-${item.id}`,
+        spotifyId: item.id,
+        name: item.name,
+        artist: item.artist || 'Spotify',
+        url: item.url,
+        imageUrl: item.cover_url,
+        isTopResult: !!item.is_top_result
+      };
+    }
+
+    if (item.type === 'playlist') {
+      return {
+        type: 'playlist',
+        source: 'spotify',
+        id: `spotify-playlist-${item.id}`,
+        spotifyId: item.id,
+        name: item.name,
+        owner: item.owner || 'Spotify',
+        url: item.url,
+        imageUrl: item.cover_url,
+        isTopResult: !!item.is_top_result
+      };
+    }
+
+    return null;
+  };
+
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!searchQuery.trim()) return;
 
     setIsSearching(true);
     setSearchError('');
+    setSearchResults([]);
 
     try {
-      const res = await fetch(`http://127.0.0.1:8000/search?q=${encodeURIComponent(searchQuery)}`);
-      if (!res.ok) throw new Error('Search failed');
-      const data = await res.json();
+      if (searchSource === 'spotify') {
+        const res = await fetch(`http://127.0.0.1:8000/api/search/spotify?q=${encodeURIComponent(searchQuery)}`);
+        if (!res.ok) throw new Error('Spotify search failed');
+        const data = await res.json();
+        const results = (data.results || [])
+          .map(normalizeSpotifySearchResult)
+          .filter(Boolean) as SearchResultItem[];
+        setSearchResults(results);
+      } else {
+        const res = await fetch(`http://127.0.0.1:8000/search?q=${encodeURIComponent(searchQuery)}`);
+        if (!res.ok) throw new Error('Search failed');
+        const data = await res.json();
 
-      const results: Track[] = data.results.map((item: any) => ({
-        id: item.id,
-        title: item.title,
-        artist: item.uploader || 'YouTube',
-        url: '', // Будет получено при воспроизведении
-        youtubeId: item.id,
-        thumbnail: item.thumbnail,
-        durationMs: item.duration ? Math.floor(item.duration * 1000) : undefined,
-        addedAt: Date.now()
-      }));
+        const results: SearchResultItem[] = (data.results || []).map((item: any) => ({
+          type: 'track',
+          source: 'youtube',
+          id: item.id,
+          title: item.title,
+          artist: item.uploader || 'YouTube',
+          url: '',
+          youtubeId: item.id,
+          thumbnail: item.thumbnail,
+          durationMs: item.duration ? Math.floor(item.duration * 1000) : undefined,
+          addedAt: Date.now()
+        }));
 
-      setSearchResults(results);
+        setSearchResults(results);
+      }
     } catch (err) {
-      setSearchError('Ошибка поиска. Запущен ли Python-сервер?');
+      setSearchError(searchSource === 'spotify' ? 'Ошибка поиска в Spotify.' : 'Ошибка поиска на YouTube.');
     } finally {
       setIsSearching(false);
     }
   };
 
+  const openSpotifySearchCollection = async (item: SearchResultItem) => {
+    if (item.type !== 'playlist' && item.type !== 'album') return;
+
+    setOpeningSearchCollectionId(item.id);
+    try {
+      const tracks = await fetchSpotifyData(item.url);
+      const normalizedTracks: Track[] = (tracks || []).map((track: Track) => ({
+        ...track,
+        id: track.id || `spotify-track-${track.spotifyId || Math.random().toString(36).slice(2)}`,
+        url: track.url || '',
+        addedAt: track.addedAt || Date.now()
+      }));
+
+      const previewPlaylist: Playlist = {
+        id: item.id,
+        title: item.name,
+        description: item.type === 'playlist' ? item.owner : item.artist,
+        coverUrl: item.imageUrl,
+        tracks: normalizedTracks,
+        spotifySyncUrl: item.url
+      };
+
+      setSearchPreviewPlaylist(previewPlaylist);
+      setActivePlaylistId(previewPlaylist.id);
+      setSelectedTrackIds(new Set());
+      setActiveTab('library');
+    } catch (err) {
+      console.error('Failed to open Spotify collection:', err);
+      alert('Не удалось открыть Spotify-плейлист. Попробуйте еще раз.');
+    } finally {
+      setOpeningSearchCollectionId(null);
+    }
+  };
+
+  const saveSearchPreviewPlaylist = () => {
+    if (!searchPreviewPlaylist) return;
+
+    const playlistToSave: Playlist = {
+      ...searchPreviewPlaylist,
+      tracks: searchPreviewPlaylist.tracks.map(track => ({ ...track, addedAt: track.addedAt || Date.now() }))
+    };
+
+    setPlaylists(prev => prev.some(pl => pl.id === playlistToSave.id) ? prev : [...prev, playlistToSave]);
+    setActivePlaylistId(playlistToSave.id);
+  };
+
   const addFromSearch = (track: Track) => {
-    // Add to favorites by default
     setPlaylists(prev => prev.map(pl =>
-      (pl.id === 'favorites' && !pl.tracks.find(t => t.youtubeId === track.youtubeId))
+      (pl.id === 'favorites' && !pl.tracks.find(t => isSameTrack(t, track)))
         ? { ...pl, tracks: [...pl.tracks, { ...track, addedAt: Date.now() }] }
         : pl
     ));
     setActiveTab('library');
   };
 
-  const activePlaylist = activePlaylistId ? playlists.find(p => p.id === activePlaylistId) : null;
+  const activePlaylist = getPlaylistById(activePlaylistId);
+  const isSearchPreviewActive = !!activePlaylist && searchPreviewPlaylist?.id === activePlaylist.id && !playlists.some(pl => pl.id === activePlaylist.id);
 
   // Compute all tracks for sidebar
   const allTracks = playlists.reduce((acc, curr) => {
@@ -2343,16 +2478,37 @@ const handleNext = () => {
                   className="flex flex-col h-full flex-1"
                 >
                   <h1 className="text-3xl font-bold mb-6">Поиск</h1>
-                <form onSubmit={handleSearch} className="relative max-w-md mb-8">
-                  <Search className="absolute left-3 top-3 text-zinc-400" size={20} />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Что хочешь послушать?"
-                    className="w-full bg-zinc-800 text-white rounded-full py-3 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-white/20"
-                  />
-                  <button type="submit" className="hidden">?скать</button>
+                <form onSubmit={handleSearch} className="max-w-2xl mb-8 space-y-4">
+                  <div className="flex w-fit rounded-full bg-zinc-800/80 p-1 border border-white/10">
+                    <button
+                      type="button"
+                      onClick={() => setSearchSource('youtube')}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold transition-colors ${searchSource === 'youtube' ? 'bg-white text-black' : 'text-zinc-300 hover:text-white'}`}
+                    >
+                      <Youtube size={18} />
+                      YouTube
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSearchSource('spotify')}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold transition-colors ${searchSource === 'spotify' ? 'bg-green-500 text-black' : 'text-zinc-300 hover:text-white'}`}
+                    >
+                      <Radio size={18} />
+                      Spotify
+                    </button>
+                  </div>
+
+                  <div className="relative">
+                    <Search className="absolute left-3 top-3 text-zinc-400" size={20} />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Что хочешь послушать?"
+                      className="w-full bg-zinc-800 text-white rounded-full py-3 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-white/20"
+                    />
+                    <button type="submit" className="hidden">Искать</button>
+                  </div>
                 </form>
 
                 <div className="flex-1 overflow-y-auto no-scrollbar">
@@ -2364,71 +2520,104 @@ const handleNext = () => {
                     <div className="text-red-400 py-4">{searchError}</div>
                   ) : searchResults.length > 0 ? (
                     <div className="space-y-2">
-                      {searchResults.map((track) => {
-                        const isSavedGlobally = playlists.some(p => p.tracks.some(t => t.id === track.id || (t.youtubeId && track.youtubeId && t.youtubeId === track.youtubeId)));
+                      {searchResults.map((item) => {
+                        const isTrackResult = item.type === 'track';
+                        const title = isTrackResult ? item.title : item.name;
+                        const subtitle = item.type === 'track'
+                          ? item.artist
+                          : item.type === 'artist'
+                            ? 'Исполнитель'
+                            : item.type === 'album'
+                              ? item.artist
+                              : item.owner;
+                        const imageUrl = isTrackResult ? item.thumbnail : item.imageUrl;
+                        const isSavedGlobally = isTrackResult && playlists.some(p => p.tracks.some(t => isSameTrack(t, item)));
+                        const isOpeningCollection = openingSearchCollectionId === item.id;
+                        const itemKind = item.type === 'track' ? 'Трек' : item.type === 'artist' ? 'Исполнитель' : item.type === 'album' ? 'Альбом' : 'Плейлист';
+                        const canOpen = item.type === 'track' || item.type === 'playlist' || item.type === 'album';
+
                         return (
-                          <div key={track.id} onClick={() => openTrackPage(track, 'search')} className="flex items-center gap-4 p-3 rounded-md hover:bg-white/10 group cursor-pointer">
+                          <div
+                            key={item.id}
+                            onClick={() => {
+                              if (item.type === 'track') openTrackPage(item, 'search');
+                              else if (item.type === 'playlist' || item.type === 'album') openSpotifySearchCollection(item);
+                            }}
+                            className={`flex items-center gap-4 p-3 rounded-md group ${canOpen ? 'hover:bg-white/10 cursor-pointer' : 'cursor-default'}`}
+                          >
                             {(layoutTheme !== 'minimalistic' || !minimoConfig.hideCovers) && (
-                              track.thumbnail ? (
-                                <motion.img layoutId={`search-cover-${track.id}`} src={track.thumbnail || undefined} alt={track.title} className="w-12 h-12 rounded object-cover" />
+                              imageUrl ? (
+                                <motion.img layoutId={`search-cover-${item.id}`} src={imageUrl || undefined} alt={title} className="w-12 h-12 rounded object-cover" />
                               ) : (
-                                <motion.div layoutId={`search-cover-${track.id}`} className="w-12 h-12 bg-zinc-800 rounded flex items-center justify-center">
-                                  <Music size={20} className="text-zinc-400" />
+                                <motion.div layoutId={`search-cover-${item.id}`} className="w-12 h-12 bg-zinc-800 rounded flex items-center justify-center">
+                                  {item.type === 'artist' ? <UserIcon size={20} className="text-zinc-400" /> : <Music size={20} className="text-zinc-400" />}
                                 </motion.div>
                               )
                             )}
                             <div className="flex-1 min-w-0 hidden sm:block">
-                              <motion.div layoutId={`search-title-${track.id}`} className="font-semibold truncate">{track.title}</motion.div>
+                              <div className="flex items-center gap-2 min-w-0">
+                                <motion.div layoutId={`search-title-${item.id}`} className="font-semibold truncate">{title}</motion.div>
+                                {item.isTopResult && <span className="shrink-0 text-[10px] uppercase tracking-wide bg-white text-black px-2 py-0.5 rounded-full font-bold">Топ</span>}
+                              </div>
                               {(!layoutTheme || layoutTheme !== 'minimalistic' || !minimoConfig.hideArtist) && (
-                                <motion.div layoutId={`search-artist-${track.id}`} className="text-sm text-zinc-400 truncate">{track.artist}</motion.div>
+                                <motion.div layoutId={`search-artist-${item.id}`} className="text-sm text-zinc-400 truncate">{subtitle}</motion.div>
                               )}
+                            </div>
+                            <div className="w-20 text-right text-xs text-zinc-400 uppercase font-semibold hidden md:block">
+                              {itemKind}
                             </div>
                             <div className="w-16 text-right text-sm text-zinc-400">
-                              {track.durationMs ? `${Math.floor(track.durationMs / 60000)}:${Math.floor((track.durationMs % 60000) / 1000).toString().padStart(2, '0')}` : '--:--'}
+                              {isOpeningCollection ? (
+                                <Loader2 size={18} className="animate-spin ml-auto" />
+                              ) : isTrackResult && item.durationMs ? (
+                                `${Math.floor(item.durationMs / 60000)}:${Math.floor((item.durationMs % 60000) / 1000).toString().padStart(2, '0')}`
+                              ) : '--:--'}
                             </div>
-                            <div className="relative">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setTrackMenuOpenId(trackMenuOpenId === track.id ? null : track.id);
-                                }}
-                                className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center hover:bg-white hover:text-black transition-colors"
-                                title="Добавить в плейлист"
-                              >
-                                {isSavedGlobally ? <Check size={20} className="text-green-500" /> : <Plus size={20} />}
-                              </button>
+                            {isTrackResult && (
+                              <div className="relative">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setTrackMenuOpenId(trackMenuOpenId === item.id ? null : item.id);
+                                  }}
+                                  className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center hover:bg-white hover:text-black transition-colors"
+                                  title="Добавить в плейлист"
+                                >
+                                  {isSavedGlobally ? <Check size={20} className="text-green-500" /> : <Plus size={20} />}
+                                </button>
 
-                              {trackMenuOpenId === track.id && (
-                                <div className="absolute right-0 mt-2 w-48 bg-zinc-800 rounded-md shadow-2xl py-1 z-50 border border-white/10">
-                                  <div className="px-3 py-2 text-xs font-semibold text-zinc-400 border-b border-white/10">Где сохранено:</div>
-                                  {playlists.map(pl => {
-                                    const isSavedInPl = pl.tracks.some(t => t.id === track.id || (t.youtubeId && track.youtubeId && t.youtubeId === track.youtubeId));
-                                    return (
-                                      <button
-                                        key={pl.id}
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setPlaylists(prev => prev.map(p => {
-                                            if (p.id === pl.id) {
-                                              if (isSavedInPl) {
-                                                return { ...p, tracks: p.tracks.filter(t => t.id !== track.id && t.youtubeId !== track.youtubeId) };
-                                              } else {
-                                                return { ...p, tracks: [...p.tracks, { ...track, addedAt: Date.now() }] };
+                                {trackMenuOpenId === item.id && (
+                                  <div className="absolute right-0 mt-2 w-48 bg-zinc-800 rounded-md shadow-2xl py-1 z-50 border border-white/10">
+                                    <div className="px-3 py-2 text-xs font-semibold text-zinc-400 border-b border-white/10">Где сохранено:</div>
+                                    {playlists.map(pl => {
+                                      const isSavedInPl = pl.tracks.some(t => isSameTrack(t, item));
+                                      return (
+                                        <button
+                                          key={pl.id}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setPlaylists(prev => prev.map(p => {
+                                              if (p.id === pl.id) {
+                                                if (isSavedInPl) {
+                                                  return { ...p, tracks: p.tracks.filter(t => !isSameTrack(t, item)) };
+                                                } else {
+                                                  return { ...p, tracks: [...p.tracks, { ...item, addedAt: Date.now() }] };
+                                                }
                                               }
-                                            }
-                                            return p;
-                                          }));
-                                        }}
-                                        className="w-full text-left px-4 py-2 text-sm hover:bg-zinc-700 transition-colors flex items-center justify-between"
-                                      >
-                                        <span className="truncate">{pl.title}</span>
-                                        {isSavedInPl && <Check size={14} className="text-green-500 shrink-0 ml-2" />}
-                                      </button>
-                                    )
-                                  })}
-                                </div>
-                              )}
-                            </div>
+                                              return p;
+                                            }));
+                                          }}
+                                          className="w-full text-left px-4 py-2 text-sm hover:bg-zinc-700 transition-colors flex items-center justify-between"
+                                        >
+                                          <span className="truncate">{pl.title}</span>
+                                          {isSavedInPl && <Check size={14} className="text-green-500 shrink-0 ml-2" />}
+                                        </button>
+                                      )
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
                         )
                       })}
@@ -2560,7 +2749,7 @@ const handleNext = () => {
                           </div>
                         )}
 
-                        {!activePlaylist.isSystem && (
+                        {!activePlaylist.isSystem && !isSearchPreviewActive && (
                           <label className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center cursor-pointer">
                             <PenSquare size={48} className="mb-2" />
                             <span className="text-xs font-semibold">?зменить фото</span>
@@ -2621,7 +2810,15 @@ const handleNext = () => {
                         <Play size={28} fill="currentColor" className="ml-1" />
                       </button>
 
-                      {/* Import Buttons (Available for all playlists) */}
+                      {isSearchPreviewActive ? (
+                        <button
+                          onClick={saveSearchPreviewPlaylist}
+                          className="ml-auto bg-green-500 text-black px-5 py-3 rounded-full font-bold cursor-pointer hover:scale-105 hover:bg-green-400 transition-all text-sm flex items-center gap-2"
+                        >
+                          <Check size={18} />
+                          Сохранить
+                        </button>
+                      ) : (
                       <div className="flex gap-2 ml-auto relative">
                         <button
                           onClick={() => {
@@ -2678,8 +2875,9 @@ const handleNext = () => {
                           <input type="file" accept="audio/*" multiple className="hidden" onChange={handleFileUpload} />
                         </label>
                       </div>
+                      )}
 
-                      {!activePlaylist.isSystem && (
+                      {!activePlaylist.isSystem && !isSearchPreviewActive && (
                         <div className="flex gap-2 ml-2">
                           <button
                             onClick={() => {
@@ -4005,7 +4203,7 @@ const handleNext = () => {
                         <div className="flex items-center gap-3 flex-1" onClick={() => {
                           setUserQueue(prev => prev.filter((_, i) => i !== idx));
 
-                          const playlistForQueue = currentPlayingPlaylist || playlists.find(p => p.id === currentPlayingPlaylistId);
+                          const playlistForQueue = currentPlayingPlaylist || getPlaylistById(currentPlayingPlaylistId);
                           if (playlistForQueue) {
                             const absoluteIndex = playlistForQueue.tracks.findIndex(t =>
                               t.id === track.id || (t.youtubeId && track.youtubeId && t.youtubeId === track.youtubeId)

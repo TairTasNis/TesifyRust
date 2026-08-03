@@ -27,6 +27,10 @@ use tokio_util::io::ReaderStream;
 use tower_http::cors::{Any, CorsLayer};
 use urlencoding::encode;
 
+#[path = "search.rs"]
+mod spotify_search;
+use spotify_search::SpotifyGuestClient;
+
 const DEFAULT_PORT: u16 = 8000;
 const DEFAULT_DOWNLOAD_DIR: &str = "downloads";
 const YT_DLP_TIMEOUT_SECS: u64 = 90;
@@ -248,7 +252,10 @@ pub async fn run_backend() -> BackendResult<()> {
     let listener = TcpListener::bind(addr).await?;
     state.log(
         "INFO",
-        format!("Rust backend listening on http://{}", listener.local_addr()?),
+        format!(
+            "Rust backend listening on http://{}",
+            listener.local_addr()?
+        ),
     );
 
     axum::serve(listener, router(state)).await?;
@@ -268,6 +275,7 @@ fn router(state: BackendState) -> Router {
         .route("/api/server-status", get(server_status))
         .route("/api/logs", get(logs))
         .route("/search", get(search_youtube))
+        .route("/api/search/spotify", get(search_spotify))
         .route("/api/translate", get(translate_text))
         .route("/api/spotify", get(extract_spotify))
         .route("/stream", get(stream_url))
@@ -277,7 +285,10 @@ fn router(state: BackendState) -> Router {
         .route("/api/info", get(system_info))
         .route("/api/settings/download_dir", post(set_download_dir))
         .route("/api/settings/downloads", get(downloads_list))
-        .route("/api/settings/downloads/{filename}", delete(delete_download))
+        .route(
+            "/api/settings/downloads/{filename}",
+            delete(delete_download),
+        )
         .route("/api/settings/downloads_all", delete(delete_all_downloads))
         .route("/download", get(download_audio))
         .with_state(state)
@@ -294,7 +305,10 @@ async fn health(State(state): State<BackendState>) -> Json<Value> {
 }
 
 async fn shutdown(State(state): State<BackendState>) -> Json<Value> {
-    state.log("INFO", "Shutdown request ignored: Tauri owns the app lifecycle");
+    state.log(
+        "INFO",
+        "Shutdown request ignored: Tauri owns the app lifecycle",
+    );
     Json(json!({ "status": "ignored" }))
 }
 
@@ -364,10 +378,31 @@ async fn search_youtube(
             .unwrap_or_default()
     };
 
-    let results: Vec<SearchResult> = entries.iter().filter_map(search_result_from_value).collect();
+    let results: Vec<SearchResult> = entries
+        .iter()
+        .filter_map(search_result_from_value)
+        .collect();
     Ok(Json(json!({ "results": results })))
 }
 
+async fn search_spotify(Query(query): Query<SearchQuery>) -> Result<Json<Value>, ApiError> {
+    let q = query.q.trim();
+    if q.is_empty() {
+        return Err(ApiError::bad_request("Empty search query"));
+    }
+
+    let spotify = SpotifyGuestClient::new();
+    let auth = spotify
+        .fetch_guest_auth()
+        .await
+        .map_err(|e| ApiError::internal(format!("Spotify auth failed: {e}")))?;
+    let results = spotify
+        .search(&auth, q)
+        .await
+        .map_err(|e| ApiError::internal(format!("Spotify search failed: {e}")))?;
+
+    Ok(Json(json!({ "results": results })))
+}
 async fn translate_text(
     State(state): State<BackendState>,
     Query(query): Query<TranslateQuery>,
@@ -381,7 +416,9 @@ async fn translate_text(
         translated.push(translate_chunk(&state.inner.http, &chunk, &source, &target).await?);
     }
 
-    Ok(Json(json!({ "translatedText": translated.join(" ").trim() })))
+    Ok(Json(
+        json!({ "translatedText": translated.join(" ").trim() }),
+    ))
 }
 
 async fn extract_spotify(
@@ -430,7 +467,10 @@ async fn stream_url(
         let state_clone = state.clone();
         tokio::spawn(async move {
             if let Err(err) = download_audio_to_dir(&state_clone, &id).await {
-                state_clone.log("ERROR", format!("Background download error: {}", err.message));
+                state_clone.log(
+                    "ERROR",
+                    format!("Background download error: {}", err.message),
+                );
             }
         });
     }
@@ -445,18 +485,14 @@ async fn proxy_stream(
     headers: HeaderMap,
     Query(query): Query<ProxyQuery>,
 ) -> Result<Response, ApiError> {
-    let mut stream_url = state
-        .inner
-        .stream_url_cache
-        .lock()
-        .get(&query.id)
-        .cloned();
+    let mut stream_url = state.inner.stream_url_cache.lock().get(&query.id).cloned();
 
     if stream_url.is_none() || query.retry.is_some() {
         stream_url = Some(refresh_stream_url(&state, &query.id).await?);
     }
 
-    let mut resp = request_upstream_stream(&state, stream_url.as_deref().unwrap(), &headers).await?;
+    let mut resp =
+        request_upstream_stream(&state, stream_url.as_deref().unwrap(), &headers).await?;
     if !resp.status().is_success() {
         let fresh_url = refresh_stream_url(&state, &query.id).await?;
         resp = request_upstream_stream(&state, &fresh_url, &headers).await?;
@@ -470,7 +506,12 @@ async fn proxy_stream(
     let mut response = Response::new(Body::from_stream(resp.bytes_stream()));
     *response.status_mut() = status;
 
-    copy_header(&upstream_headers, response.headers_mut(), "content-type", header::CONTENT_TYPE);
+    copy_header(
+        &upstream_headers,
+        response.headers_mut(),
+        "content-type",
+        header::CONTENT_TYPE,
+    );
     copy_header(
         &upstream_headers,
         response.headers_mut(),
@@ -491,10 +532,9 @@ async fn proxy_stream(
     );
 
     if !response.headers().contains_key(header::CONTENT_TYPE) {
-        response.headers_mut().insert(
-            header::CONTENT_TYPE,
-            HeaderValue::from_static("audio/mpeg"),
-        );
+        response
+            .headers_mut()
+            .insert(header::CONTENT_TYPE, HeaderValue::from_static("audio/mpeg"));
     }
 
     Ok(response)
@@ -640,7 +680,8 @@ async fn download_audio(
 ) -> Result<Json<Value>, ApiError> {
     let info = ytdlp_info(&state, &query.url).await?;
     let title = string_at(&info, &["title"]).unwrap_or_else(|| "Unknown".to_string());
-    let video_id = string_at(&info, &["id"]).ok_or_else(|| ApiError::internal("Missing media id"))?;
+    let video_id =
+        string_at(&info, &["id"]).ok_or_else(|| ApiError::internal("Missing media id"))?;
 
     download_audio_to_dir(&state, &query.url).await?;
 
@@ -769,17 +810,16 @@ async fn extract_spotify_embed(
         .text()
         .await
         .map_err(|e| ApiError::internal(format!("Spotify embed HTML failed: {e}")))?;
-    let script_re = Regex::new(
-        r#"(?s)<script id="__NEXT_DATA__" type="application/json">(.*?)</script>"#,
-    )
-    .expect("valid regex");
+    let script_re =
+        Regex::new(r#"(?s)<script id="__NEXT_DATA__" type="application/json">(.*?)</script>"#)
+            .expect("valid regex");
     let json_text = script_re
         .captures(&html)
         .and_then(|c| c.get(1))
         .map(|m| m.as_str())
         .ok_or_else(|| ApiError::internal("No data found in embed"))?;
-    let data: Value =
-        serde_json::from_str(json_text).map_err(|e| ApiError::internal(format!("Spotify JSON failed: {e}")))?;
+    let data: Value = serde_json::from_str(json_text)
+        .map_err(|e| ApiError::internal(format!("Spotify JSON failed: {e}")))?;
     let entity = data
         .pointer("/props/pageProps/state/data/entity")
         .ok_or_else(|| ApiError::internal("Spotify entity missing"))?;
@@ -874,7 +914,11 @@ fn spotify_playlist_track_from_item(track_wrapper: &Value) -> Option<SpotifyTrac
     let duration_ms = t_data
         .pointer("/playcast/durationMs")
         .and_then(as_i64)
-        .or_else(|| t_data.pointer("/duration/totalMilliseconds").and_then(as_i64))
+        .or_else(|| {
+            t_data
+                .pointer("/duration/totalMilliseconds")
+                .and_then(as_i64)
+        })
         .or_else(|| {
             t_data
                 .pointer("/trackDuration/totalMilliseconds")
@@ -950,7 +994,10 @@ async fn translate_chunk(
     }
 }
 
-async fn extract_direct_stream_url(state: &BackendState, id_or_url: &str) -> Result<String, ApiError> {
+async fn extract_direct_stream_url(
+    state: &BackendState,
+    id_or_url: &str,
+) -> Result<String, ApiError> {
     let input = normalize_media_input(id_or_url);
     let info = ytdlp_json(
         state,
@@ -1159,11 +1206,19 @@ fn yt_dlp_candidates(root_dir: &Path) -> Vec<PathBuf> {
     let mut candidates = vec![
         root_dir.join(&exe),
         root_dir.join("_up_").join("tools").join(&exe),
-        root_dir.join("resources").join("_up_").join("tools").join(&exe),
+        root_dir
+            .join("resources")
+            .join("_up_")
+            .join("tools")
+            .join(&exe),
         root_dir.join("resources").join("tools").join(&exe),
         root_dir.join("tools").join(&exe),
         root_dir.join("bin").join(&exe),
-        root_dir.join("_up_").join(".venv").join(script_dir).join(&exe),
+        root_dir
+            .join("_up_")
+            .join(".venv")
+            .join(script_dir)
+            .join(&exe),
         root_dir.join(".venv").join(script_dir).join(&exe),
     ];
 
@@ -1402,7 +1457,8 @@ async fn serve_file(path: PathBuf) -> Result<Response, ApiError> {
     let mut response = Response::new(Body::from_stream(stream));
     response.headers_mut().insert(
         header::CONTENT_TYPE,
-        HeaderValue::from_str(mime.as_ref()).unwrap_or(HeaderValue::from_static("application/octet-stream")),
+        HeaderValue::from_str(mime.as_ref())
+            .unwrap_or(HeaderValue::from_static("application/octet-stream")),
     );
     response.headers_mut().insert(
         header::CONTENT_LENGTH,
