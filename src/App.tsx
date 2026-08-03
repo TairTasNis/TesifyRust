@@ -558,6 +558,7 @@ export default function App() {
     const [isQueueModalOpen, setIsQueueModalOpen] = useState(false);
     const [userQueue, setUserQueue] = useState<Track[]>([]);
     const [isShuffleQueue, setIsShuffleQueue] = useState(false);
+    const queueBeforeShuffleRef = useRef<Track[] | null>(null);
     const [overrideTrack, setOverrideTrack] = useState<Track | null>(null);
   const [isYoutubeModalOpen, setIsYoutubeModalOpen] = useState(false);
   const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
@@ -1334,37 +1335,81 @@ type SortField = 'default' | 'index' | 'title' | 'addedAt' | 'durationMs';
     }
   };
 
-  const handleNext = () => {
-      if (userQueue.length > 0) {
-        const nextT = userQueue[0];
-        setUserQueue(prev => prev.slice(1));
-        playQueueTrack(nextT);
+const shuffleTracks = (tracks: Track[]) => {
+  const arr = [...tracks];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+};
+
+const handleNext = () => {
+  if (userQueue.length > 0) {
+    const nextT = userQueue[0];
+    setUserQueue(prev => prev.slice(1));
+
+    const playlistForQueue = currentPlayingPlaylist || playlists.find(p => p.id === currentPlayingPlaylistId);
+    if (playlistForQueue) {
+      const absoluteIndex = playlistForQueue.tracks.findIndex(t =>
+        t.id === nextT.id || (t.youtubeId && nextT.youtubeId && t.youtubeId === nextT.youtubeId)
+      );
+
+      if (absoluteIndex !== -1) {
+        setOverrideTrack(null);
+        playTrack(absoluteIndex, playlistForQueue.id);
         return;
       }
-      if (overrideTrack) {
-         setOverrideTrack(null);
+    }
+
+    playQueueTrack(nextT);
+    return;
+  }
+
+  if (overrideTrack) {
+    setOverrideTrack(null);
+  }
+
+  const playlist = currentPlayingPlaylist || playlists.find(p => p.id === 'favorites');
+  if (!playlist || playlist.tracks.length === 0) return;
+
+  const sortedTracks = getSortedTracks(playlist.tracks);
+  const currentTrackObj = playlist.tracks[currentTrackIndex];
+
+  if (isShuffleQueue) {
+    const remaining = sortedTracks.filter(t => !currentTrackObj || t.id !== currentTrackObj.id);
+
+    if (remaining.length > 0) {
+      const shuffled = shuffleTracks(remaining);
+      const nextT = shuffled[0];
+
+      setUserQueue(shuffled.slice(1));
+
+      const absoluteIndex = playlist.tracks.findIndex(t => t.id === nextT.id);
+      if (absoluteIndex !== -1) {
+        playTrack(absoluteIndex, playlist.id);
+      } else {
+        playQueueTrack(nextT);
       }
 
-    const playlist = currentPlayingPlaylist || playlists.find(p => p.id === 'favorites');
-    if (!playlist || playlist.tracks.length === 0) return;
-    
-    const sortedTracks = getSortedTracks(playlist.tracks);
-    const currentTrackObj = playlist.tracks[currentTrackIndex];
-    if (!currentTrackObj) {
-      const firstTrack = sortedTracks[0];
-      const absoluteIndex = playlist.tracks.findIndex(t => t.id === firstTrack.id);
-      playTrack(absoluteIndex, playlist.id);
       return;
     }
-    
-    const sortedIndex = sortedTracks.findIndex(t => t.id === currentTrackObj.id);
-    const nextSortedIndex = isShuffleQueue ? Math.floor(Math.random() * sortedTracks.length) : (sortedIndex + 1) % sortedTracks.length;
-    
-    const nextTrack = sortedTracks[nextSortedIndex];
-    const absoluteIndex = playlist.tracks.findIndex(t => t.id === nextTrack.id);
-    
+  }
+
+  if (!currentTrackObj) {
+    const firstTrack = sortedTracks[0];
+    const absoluteIndex = playlist.tracks.findIndex(t => t.id === firstTrack.id);
     playTrack(absoluteIndex, playlist.id);
-  };
+    return;
+  }
+
+  const sortedIndex = sortedTracks.findIndex(t => t.id === currentTrackObj.id);
+  const nextSortedIndex = (sortedIndex + 1) % sortedTracks.length;
+  const nextTrack = sortedTracks[nextSortedIndex];
+  const absoluteIndex = playlist.tracks.findIndex(t => t.id === nextTrack.id);
+
+  playTrack(absoluteIndex, playlist.id);
+};
 
   const handlePrev = () => {
     const playlist = currentPlayingPlaylist || playlists.find(p => p.id === 'favorites');
@@ -3884,7 +3929,35 @@ type SortField = 'default' | 'index' | 'title' | 'addedAt' | 'durationMs';
                 <div className="flex items-center justify-between mb-8">
                   <h2 className="text-2xl font-bold">Очередь</h2>
                   <div className="flex space-x-4">
-                    <button onClick={() => setIsShuffleQueue(!isShuffleQueue)} className={`p-2 rounded-full ${isShuffleQueue ? "bg-green-500 text-black" : "bg-white/10 text-white"}`} title="Перемешать очередь">
+                    <button onClick={() => {
+                      if (!isShuffleQueue) {
+                        queueBeforeShuffleRef.current = userQueue;
+
+                        let baseQueue: Track[] = [];
+
+                        if (userQueue.length > 0) {
+                          baseQueue = userQueue;
+                        } else if (currentPlayingPlaylist && currentPlayingPlaylist.tracks.length > 0) {
+                          const sorted = getSortedTracks(currentPlayingPlaylist.tracks);
+                          const currentTrackObj = currentTrackIndex >= 0 ? currentPlayingPlaylist.tracks[currentTrackIndex] : null;
+                          const currentSortedIndex = currentTrackObj ? sorted.findIndex(t => t.id === currentTrackObj.id) : -1;
+
+                          baseQueue = currentSortedIndex >= 0 ? sorted.slice(currentSortedIndex + 1) : sorted;
+                        }
+
+                        setUserQueue(shuffleTracks(baseQueue));
+                        setIsShuffleQueue(true);
+                      } else {
+                        if (queueBeforeShuffleRef.current !== null) {
+                          setUserQueue(queueBeforeShuffleRef.current);
+                          queueBeforeShuffleRef.current = null;
+                        } else {
+                          setUserQueue([]);
+                        }
+
+                        setIsShuffleQueue(false);
+                      }
+                    }} className={`p-2 rounded-full ${isShuffleQueue ? "bg-green-500 text-black" : "bg-white/10 text-white"}`} title="Перемешать очередь">
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 3 21 3 21 8"></polyline><line x1="4" y1="20" x2="21" y2="3"></line><polyline points="21 16 21 21 16 21"></polyline><line x1="15" y1="15" x2="21" y2="21"></line><line x1="4" y1="4" x2="9" y2="9"></line></svg>
                     </button>
                     <button onClick={() => setIsQueueModalOpen(false)} className="p-2 bg-white/10 rounded-full hover:bg-white/20 transition-colors">
@@ -3901,7 +3974,7 @@ type SortField = 'default' | 'index' | 'title' | 'addedAt' | 'durationMs';
                         <div className="flex items-center gap-3">
                           <Music size={20} className="text-green-500" />
                           <div>
-                            <p className="text-sm font-medium text-green-100">{overrideTrack.title}</p>
+                            <p className="text-sm font-medium text-white">{overrideTrack.title}</p>
                             <p className="text-xs text-green-400">{overrideTrack.artist}</p>
                           </div>
                         </div>
@@ -3915,7 +3988,7 @@ type SortField = 'default' | 'index' | 'title' | 'addedAt' | 'durationMs';
                         <div className="flex items-center gap-3">
                           <Music size={20} className="text-green-500" />
                           <div>
-                            <p className="text-sm font-medium text-green-100">{currentPlayingPlaylist.tracks[currentTrackIndex].title}</p>
+                            <p className="text-sm font-medium text-white">{currentPlayingPlaylist.tracks[currentTrackIndex].title}</p>
                             <p className="text-xs text-green-400">{currentPlayingPlaylist.tracks[currentTrackIndex].artist}</p>
                           </div>
                         </div>
@@ -3927,9 +4000,26 @@ type SortField = 'default' | 'index' | 'title' | 'addedAt' | 'durationMs';
                   <div className="mb-8">
                     <h3 className="text-lg font-semibold text-zinc-400 mb-4">В очереди</h3>
                     <div className="space-y-2">
-                    {(isShuffleQueue ? [...userQueue].sort(() => Math.random() - 0.5) : userQueue).map((track, idx) => (
+                    {userQueue.map((track, idx) => (
                       <div draggable onDragStart={(e) => e.dataTransfer.setData("text/plain", idx.toString())} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); const fromIdx = parseInt(e.dataTransfer.getData("text/plain")); const newQ = [...userQueue]; const item = newQ.splice(fromIdx, 1)[0]; newQ.splice(idx, 0, item); setUserQueue(newQ); }} key={`q-${idx}-${track.id}`} className="flex items-center justify-between bg-white/5 p-3 rounded-xl hover:bg-white/10 group cursor-move">
-                        <div className="flex items-center gap-3 flex-1" onClick={() => playQueueTrack(track, idx)} style={{cursor: 'pointer'}}>
+                        <div className="flex items-center gap-3 flex-1" onClick={() => {
+                          setUserQueue(prev => prev.filter((_, i) => i !== idx));
+
+                          const playlistForQueue = currentPlayingPlaylist || playlists.find(p => p.id === currentPlayingPlaylistId);
+                          if (playlistForQueue) {
+                            const absoluteIndex = playlistForQueue.tracks.findIndex(t =>
+                              t.id === track.id || (t.youtubeId && track.youtubeId && t.youtubeId === track.youtubeId)
+                            );
+
+                            if (absoluteIndex !== -1) {
+                              setOverrideTrack(null);
+                              playTrack(absoluteIndex, playlistForQueue.id);
+                              return;
+                            }
+                          }
+
+                          playQueueTrack(track);
+                        }} style={{cursor: 'pointer'}}>
                           <Music size={20} className="text-zinc-500" />
                           <div>
                             <p className="text-sm font-medium text-white">{track.title}</p>
@@ -3945,7 +4035,7 @@ type SortField = 'default' | 'index' | 'title' | 'addedAt' | 'durationMs';
                 </div>
               )}
 
-              {currentPlayingPlaylistId && currentPlayingPlaylist && currentTrackIndex >= 0 && (
+              {userQueue.length === 0 && currentPlayingPlaylistId && currentPlayingPlaylist && currentTrackIndex >= 0 && (
                 <div>
                   <h3 className="text-lg font-semibold text-zinc-400 mb-4">Далее из: {currentPlayingPlaylist.title}</h3>
                   <div className="space-y-2 opacity-70">
@@ -3953,7 +4043,7 @@ type SortField = 'default' | 'index' | 'title' | 'addedAt' | 'durationMs';
                       <div key={`pl-${idx}-${track.id}`} className="flex items-center gap-3 bg-transparent p-3 rounded-xl hover:bg-white/5 cursor-default transition-colors">
                         <span className="text-zinc-600 text-xs w-4 text-center">{idx + 1}</span>
                         <div>
-                          <p className="text-sm font-medium">{track.title}</p>
+                          <p className="text-sm font-medium text-white">{track.title}</p>
                           <p className="text-xs text-zinc-400">{track.artist}</p>
                         </div>
                       </div>

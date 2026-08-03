@@ -7,7 +7,6 @@ use axum::{
     Json, Router,
 };
 use chrono::{DateTime, Local, Utc};
-use futures_util::StreamExt;
 use parking_lot::Mutex;
 use regex::Regex;
 use reqwest::Client;
@@ -44,6 +43,7 @@ struct BackendState {
 
 struct BackendInner {
     root_dir: PathBuf,
+    data_dir: PathBuf,
     config_file: PathBuf,
     download_dir: Mutex<PathBuf>,
     start_time: Instant,
@@ -153,13 +153,21 @@ impl BackendState {
         dotenvy::dotenv().ok();
         dotenvy::from_filename(".env.local").ok();
 
-        let root_dir = env::current_dir()?;
+        let root_dir = env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(PathBuf::from))
+            .unwrap_or_else(|| env::current_dir().unwrap_or_default());
+        let data_dir = env::var("TESIFY_DATA_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| default_data_dir());
+        std::fs::create_dir_all(&data_dir)?;
+
         let config_file = env::var("TESIFY_CONFIG_PATH")
             .map(PathBuf::from)
-            .unwrap_or_else(|_| root_dir.join("tesify_config.json"));
+            .unwrap_or_else(|_| data_dir.join("tesify_config.json"));
         let config = load_config(&config_file);
-        let download_dir = resolve_path(&root_dir, &config.download_dir);
-        ensure_dir_or_fallback(&download_dir, &root_dir.join(DEFAULT_DOWNLOAD_DIR))?;
+        let download_dir = resolve_path(&data_dir, &config.download_dir);
+        ensure_dir_or_fallback(&download_dir, &data_dir.join(DEFAULT_DOWNLOAD_DIR))?;
 
         let http = Client::builder()
             .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Tesify/1.2.3")
@@ -170,6 +178,7 @@ impl BackendState {
             inner: Arc::new(BackendInner {
                 yt_dlp: resolve_yt_dlp(&root_dir),
                 root_dir,
+                data_dir,
                 config_file,
                 download_dir: Mutex::new(download_dir),
                 start_time: Instant::now(),
@@ -509,6 +518,7 @@ async fn system_info(State(state): State<BackendState>) -> Json<Value> {
     Json(json!({
         "version": "Release 1.0",
         "install_dir": install_dir.to_string_lossy(),
+        "data_dir": state.inner.data_dir.to_string_lossy(),
         "download_dir": state.download_dir().to_string_lossy()
     }))
 }
@@ -522,7 +532,7 @@ async fn set_download_dir(
         return Err(ApiError::bad_request("Download directory path is empty"));
     }
 
-    let dir = resolve_path(&state.inner.root_dir, requested);
+    let dir = resolve_path(&state.inner.data_dir, requested);
     fs::create_dir_all(&dir)
         .await
         .map_err(|e| ApiError::internal(format!("Cannot create download directory: {e}")))?;
@@ -1055,9 +1065,10 @@ async fn ytdlp_output(
     timeout_secs: u64,
 ) -> Result<std::process::Output, ApiError> {
     let mut cmd = make_ytdlp_command(&state.inner.yt_dlp);
-    cmd.current_dir(&state.inner.root_dir)
+    cmd.current_dir(&state.inner.data_dir)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    add_tool_env(&mut cmd, &state.inner.root_dir, &state.inner.yt_dlp);
     hide_console_window(&mut cmd);
     for arg in args {
         cmd.arg(arg);
@@ -1104,7 +1115,6 @@ fn make_ytdlp_command(runner: &YtDlpRunner) -> Command {
 
 #[cfg(windows)]
 fn hide_console_window(cmd: &mut Command) {
-    use std::os::windows::process::CommandExt;
     cmd.creation_flags(0x08000000);
 }
 
@@ -1119,15 +1129,7 @@ fn resolve_yt_dlp(root_dir: &Path) -> YtDlpRunner {
         }
     }
 
-    let candidates = [
-        root_dir.join("tools").join(exe_name("yt-dlp")),
-        root_dir.join("bin").join(exe_name("yt-dlp")),
-        root_dir
-            .join(".venv")
-            .join(if cfg!(windows) { "Scripts" } else { "bin" })
-            .join(exe_name("yt-dlp")),
-    ];
-    for candidate in candidates {
+    for candidate in yt_dlp_candidates(root_dir) {
         if candidate.exists() {
             return YtDlpRunner::Program(candidate);
         }
@@ -1149,6 +1151,84 @@ fn resolve_yt_dlp(root_dir: &Path) -> YtDlpRunner {
     }
 
     YtDlpRunner::ProgramName("yt-dlp".to_string())
+}
+
+fn yt_dlp_candidates(root_dir: &Path) -> Vec<PathBuf> {
+    let exe = exe_name("yt-dlp");
+    let script_dir = if cfg!(windows) { "Scripts" } else { "bin" };
+    let mut candidates = vec![
+        root_dir.join(&exe),
+        root_dir.join("_up_").join("tools").join(&exe),
+        root_dir.join("resources").join("_up_").join("tools").join(&exe),
+        root_dir.join("resources").join("tools").join(&exe),
+        root_dir.join("tools").join(&exe),
+        root_dir.join("bin").join(&exe),
+        root_dir.join("_up_").join(".venv").join(script_dir).join(&exe),
+        root_dir.join(".venv").join(script_dir).join(&exe),
+    ];
+
+    for ancestor in root_dir.ancestors().take(5) {
+        candidates.push(ancestor.join("tools").join(&exe));
+        candidates.push(ancestor.join(".venv").join(script_dir).join(&exe));
+    }
+
+    candidates
+}
+
+fn add_tool_env(cmd: &mut Command, root_dir: &Path, runner: &YtDlpRunner) {
+    let tool_dirs = tool_env_dirs(root_dir, runner);
+    if tool_dirs.is_empty() {
+        return;
+    }
+
+    let mut paths = tool_dirs.clone();
+    if let Some(existing) = env::var_os("PATH") {
+        paths.extend(env::split_paths(&existing));
+    }
+    if let Ok(joined) = env::join_paths(paths) {
+        cmd.env("PATH", joined);
+    }
+
+    let ffmpeg = exe_name("ffmpeg");
+    let ffmpeg_dir = tool_dirs
+        .iter()
+        .find(|dir| dir.join(&ffmpeg).exists())
+        .or_else(|| tool_dirs.first());
+    if let Some(dir) = ffmpeg_dir {
+        cmd.env("FFMPEG_LOCATION", dir);
+    }
+}
+
+fn tool_env_dirs(root_dir: &Path, runner: &YtDlpRunner) -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Some(dir) = runner_tool_dir(runner) {
+        dirs.push(dir);
+    }
+    dirs.push(root_dir.join("_up_").join("tools"));
+    dirs.push(root_dir.join("resources").join("_up_").join("tools"));
+    dirs.push(root_dir.join("resources").join("tools"));
+    dirs.push(root_dir.join("tools"));
+
+    for ancestor in root_dir.ancestors().take(5) {
+        dirs.push(ancestor.join("tools"));
+    }
+
+    let mut existing = Vec::new();
+    for dir in dirs {
+        if dir.exists() && !existing.iter().any(|seen| seen == &dir) {
+            existing.push(dir);
+        }
+    }
+    existing
+}
+
+fn runner_tool_dir(runner: &YtDlpRunner) -> Option<PathBuf> {
+    match runner {
+        YtDlpRunner::Program(path) | YtDlpRunner::PythonModule(path) => {
+            path.parent().map(Path::to_path_buf)
+        }
+        YtDlpRunner::ProgramName(_) => None,
+    }
 }
 
 fn exe_name(name: &str) -> String {
@@ -1345,6 +1425,15 @@ fn safe_filename(filename: &str) -> Result<&str, ApiError> {
 
 fn default_download_dir() -> String {
     DEFAULT_DOWNLOAD_DIR.to_string()
+}
+
+fn default_data_dir() -> PathBuf {
+    env::var_os("APPDATA")
+        .or_else(|| env::var_os("LOCALAPPDATA"))
+        .map(PathBuf::from)
+        .or_else(|| env::var_os("HOME").map(PathBuf::from))
+        .unwrap_or_else(|| env::current_dir().unwrap_or_default())
+        .join("Tesify")
 }
 
 fn load_config(path: &Path) -> AppConfig {
