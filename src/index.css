@@ -1,3 +1,11 @@
+/**
+ * @fileoverview Main application backend module
+ * @copyright Copyright (c) 2026 Tair Tasmukhambetov (@ttfotg)
+ * @license TFG License
+ * @see {@link ../LICENSE} for full terms and commercial requirement (10% gross royalty).
+ * Commercial contact: Telegram @ttfotg | tasmuhambetovtair@gmail.com
+ */
+
 @import "tailwindcss";
 
 @theme {

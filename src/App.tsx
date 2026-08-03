@@ -1,6 +1,9 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
+﻿/**
+ * @fileoverview Main application backend module
+ * @copyright Copyright (c) 2026 Tair Tasmukhambetov (@ttfotg)
+ * @license TFG License
+ * @see {@link ../LICENSE} for full terms and commercial requirement (10% gross royalty).
+ * Commercial contact: Telegram @ttfotg | tasmuhambetovtair@gmail.com
  */
 
 import React, { useState, useRef, useEffect } from 'react';
