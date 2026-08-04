@@ -13,6 +13,7 @@ import { Home, Search, Library as LibraryIcon, Play, Pause, SkipBack, SkipForwar
 import { Track, Tab, Playlist, UserStats, Comment, SearchSource, SearchResultItem } from './types';
 import { fetchSpotifyData } from './services/spotify';
 import AuthScreen from './components/AuthScreen';
+import SpotifySearchResults from './components/SpotifySearchResults';
 import { auth, db } from './services/firebase';
 import { onAuthStateChanged, signOut, updatePassword, updateProfile, deleteUser, EmailAuthProvider, reauthenticateWithCredential, linkWithPopup, GoogleAuthProvider, type User } from 'firebase/auth';
 import { ref, get, set, onValue, push, remove, update } from 'firebase/database';
@@ -62,7 +63,7 @@ const uploadToImgBB = async (file: File): Promise<string | null> => {
 
 const APP_VERSION = "1.2.2";
 
-const TrackPageView = ({ track, currentUser, context, onBack, onOpenComments, playlists, setPlaylists }: { track: Track, currentUser: User | null, context: string, onBack: () => void, onOpenComments: () => void, playlists: Playlist[], setPlaylists: React.Dispatch<React.SetStateAction<Playlist[]>> }) => {
+const TrackPageView = ({ track, currentUser, context, onBack, onOpenComments, playlists, setPlaylists, onListenNow }: { track: Track, currentUser: User | null, context: string, onBack: () => void, onOpenComments: () => void, playlists: Playlist[], setPlaylists: React.Dispatch<React.SetStateAction<Playlist[]>>, onListenNow: (track: Track) => void }) => {
   const [likes, setLikes] = useState<number>(0);
   const [isLiked, setIsLiked] = useState<boolean>(false);
   const [comments, setComments] = useState<Comment[]>([]);
@@ -256,6 +257,14 @@ const TrackPageView = ({ track, currentUser, context, onBack, onOpenComments, pl
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
           <span className="font-bold hidden sm:inline">Поделиться</span>
+        </button>
+
+        <button 
+          onClick={() => onListenNow(track)} 
+          className="flex items-center gap-2 transition-colors bg-green-500 px-6 py-3 rounded-full hover:brightness-110 text-black"
+        >
+          <Play size={24} fill="black" />
+          <span className="font-bold hidden sm:inline">Слушать</span>
         </button>
 
         {isPlaylistMenuOpen && (
@@ -1565,6 +1574,9 @@ const handleNext = () => {
     let updatedTrack = { ...track };
     let needsUpdate = false;
 
+    // Играем трек из плейлиста, сбрасываем очередь-оверрайд, чтобы он заиграл сразу
+    setOverrideTrack(null);
+
     // Если у трека есть youtubeId, мы в любом случае будем запрашивать свежую ссылку
     if (updatedTrack.youtubeId) {
       updatedTrack.url = ''; // Очищаем старую ссылку, чтобы она не начала играть
@@ -2522,6 +2534,30 @@ const handleNext = () => {
                   ) : searchError ? (
                     <div className="text-red-400 py-4">{searchError}</div>
                   ) : searchResults.length > 0 ? (
+                    searchSource === 'spotify' ? (
+                      <SpotifySearchResults
+                        results={searchResults}
+                        query={searchQuery}
+                        playlists={playlists}
+                        trackMenuOpenId={trackMenuOpenId}
+                        setTrackMenuOpenId={setTrackMenuOpenId}
+                        hideCovers={layoutTheme === 'minimalistic' && minimoConfig.hideCovers}
+                        hideArtist={layoutTheme === 'minimalistic' && minimoConfig.hideArtist}
+                        onOpenTrack={(item) => openTrackPage(item, 'search')}
+                        onOpenCollection={(item) => openSpotifySearchCollection(item)}
+                        onToggleAdd={(item, playlistId) =>
+                          setPlaylists(prev => prev.map(p => {
+                            if (p.id === playlistId) {
+                              const saved = p.tracks.some(t => isSameTrack(t, item));
+                              if (saved) return { ...p, tracks: p.tracks.filter(t => !isSameTrack(t, item)) };
+                              return { ...p, tracks: [...p.tracks, { ...item, addedAt: Date.now() }] };
+                            }
+                            return p;
+                          }))
+                        }
+                        isSameTrack={isSameTrack}
+                      />
+                    ) : (
                     <div className="space-y-2">
                       {searchResults.map((item) => {
                         const isTrackResult = item.type === 'track';
@@ -2625,6 +2661,7 @@ const handleNext = () => {
                         )
                       })}
                     </div>
+                    )
                   ) : searchQuery && !isSearching ? (
                     <div className="text-zinc-400 py-4">Ничего не найдено</div>
                   ) : null}
@@ -3040,7 +3077,7 @@ const handleNext = () => {
                   transition={{ duration: 0.2 }}
                   className="flex flex-col h-full flex-1"
                 >
-                  <TrackPageView track={viewingTrack} currentUser={currentUser} context={viewingTrackContext} onBack={() => { setActiveTab(previousTab); }} onOpenComments={() => setActiveTab('comments')} playlists={playlists} setPlaylists={setPlaylists} />
+                  <TrackPageView track={viewingTrack} currentUser={currentUser} context={viewingTrackContext} onBack={() => { setActiveTab(previousTab); }} onOpenComments={() => setActiveTab('comments')} playlists={playlists} setPlaylists={setPlaylists} onListenNow={(t) => playQueueTrack(t)} />
                 </motion.div>
               )}
               {activeTab === 'comments' && viewingTrack && (
