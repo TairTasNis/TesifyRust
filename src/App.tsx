@@ -1822,6 +1822,19 @@ const handleNext = () => {
     }
   };
 
+  const openSpotifyAllTracks = (tracks: Track[]) => {
+    const previewPlaylist: Playlist = {
+      id: 'search-all-tracks',
+      title: searchQuery ? `Поиск: ${searchQuery}` : 'Все треки',
+      description: 'Найденные треки',
+      tracks: tracks.map(t => ({ ...t, addedAt: Date.now() })),
+    };
+    setSearchPreviewPlaylist(previewPlaylist);
+    setActivePlaylistId(previewPlaylist.id);
+    setSelectedTrackIds(new Set());
+    setActiveTab('library');
+  };
+
   const saveSearchPreviewPlaylist = () => {
     if (!searchPreviewPlaylist) return;
 
@@ -2545,6 +2558,8 @@ const handleNext = () => {
                         hideArtist={layoutTheme === 'minimalistic' && minimoConfig.hideArtist}
                         onOpenTrack={(item) => openTrackPage(item, 'search')}
                         onOpenCollection={(item) => openSpotifySearchCollection(item)}
+                        onOpenAllTracks={(tracks) => openSpotifyAllTracks(tracks)}
+                        openingSearchCollectionId={openingSearchCollectionId}
                         onToggleAdd={(item, playlistId) =>
                           setPlaylists(prev => prev.map(p => {
                             if (p.id === playlistId) {

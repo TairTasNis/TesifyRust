@@ -1,5 +1,5 @@
 import React from 'react';
-import { Play, Plus, Check, Music, User as UserIcon } from 'lucide-react';
+import { Play, Plus, Check, Music, User as UserIcon, ChevronRight, Loader2 } from 'lucide-react';
 import type { SearchResultItem, Playlist, Track } from '../types';
 
 interface Props {
@@ -12,7 +12,9 @@ interface Props {
   hideArtist: boolean;
   onOpenTrack: (item: SearchResultItem) => void;
   onOpenCollection: (item: SearchResultItem) => void;
+  onOpenAllTracks: (tracks: Track[]) => void;
   onToggleAdd: (item: SearchResultItem, playlistId: string) => void;
+  openingSearchCollectionId: string | null;
   isSameTrack: (a: Track, b: Track) => boolean;
 }
 
@@ -47,8 +49,10 @@ const SpotifySearchResults: React.FC<Props> = ({
   hideArtist,
   onOpenTrack,
   onOpenCollection,
+  onOpenAllTracks,
   onToggleAdd,
   isSameTrack,
+  openingSearchCollectionId,
 }) => {
   // Лучший результат работает как "весы": сравниваем, к чему запрос ближе —
   // к имени исполнителя или к названию песни. Убрав имя артиста из запроса,
@@ -73,20 +77,32 @@ const SpotifySearchResults: React.FC<Props> = ({
   }
   const trackScore = bestTrack ? matchScore(bestTrack.title, leftover) : 0;
 
+  // Если название трека совпадает с именем исполнителя — приоритет у трека.
+  const trackTitleMatchesArtist = !!(bestTrack && bestArtist && normalize(bestTrack.title) === normalize(bestArtist.name));
+
   const featured: AnyResult =
-    (bestTrack && trackScore >= 60)
+    trackTitleMatchesArtist
       ? bestTrack
-      : (bestArtist && artistScore >= 60)
-        ? bestArtist
-        : (bestTrack || bestArtist);
+      : (bestTrack && trackScore >= 60)
+        ? bestTrack
+        : (bestArtist && artistScore >= 60)
+          ? bestArtist
+          : (bestTrack || bestArtist);
 
   const featuredId = featured?.id;
   const allTracks = results.filter(i => i.type === 'track');
   const sideTracks = allTracks.filter(t => t.id !== featuredId).slice(0, 4);
-  const otherTracks = allTracks.filter(t => t.id !== featuredId).slice(4);
   const albums = results.filter(i => i.type === 'album');
   const artists = results.filter(i => i.type === 'artist' && (!featured || featured.type !== 'artist' || i.id !== featured.id));
   const spotifyPlaylists = results.filter(i => i.type === 'playlist');
+
+  // Листание горизонтальных строк колёсиком мыши
+  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+      el.scrollLeft += e.deltaY;
+    }
+  };
 
   const renderTrackAddButton = (item: SearchResultItem) => {
     const isSavedGlobally = playlists.some(p => p.tracks.some(t => isSameTrack(t, item)));
@@ -164,18 +180,22 @@ const SpotifySearchResults: React.FC<Props> = ({
     return (
       <div
         onClick={() => isTrack && onOpenTrack(item)}
-        className={`relative rounded-lg overflow-hidden p-4 pb-16 bg-gradient-to-br ${isTrack ? 'from-fuchsia-700/60 via-purple-700/50 to-blue-700/60' : 'from-indigo-700/50 via-teal-700/50 to-emerald-700/50'} ${isTrack ? 'cursor-pointer' : 'cursor-default'} shadow-xl`}
+        className={`relative rounded-lg overflow-hidden p-4 sm:p-6 sm:pr-20 bg-gradient-to-br ${isTrack ? 'from-fuchsia-700/60 via-purple-700/50 to-blue-700/60' : 'from-indigo-700/50 via-teal-700/50 to-emerald-700/50'} ${isTrack ? 'cursor-pointer' : 'cursor-default'} shadow-xl`}
       >
-        <div className={`w-28 h-28 sm:w-36 sm:h-36 rounded-lg shadow-2xl overflow-hidden bg-zinc-800 flex items-center justify-center mb-4`}>
-          {imageUrl ? (
-            <img src={imageUrl} alt={title} className="w-full h-full object-cover" />
-          ) : (
-            isTrack ? <Music size={44} className="text-zinc-400" /> : <UserIcon size={44} className="text-zinc-400" />
-          )}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6">
+          <div className={`w-32 h-32 sm:w-40 sm:h-40 rounded-lg shadow-2xl overflow-hidden bg-zinc-800 flex items-center justify-center shrink-0`}>
+            {imageUrl ? (
+              <img src={imageUrl} alt={title} className="w-full h-full object-cover" />
+            ) : (
+              isTrack ? <Music size={44} className="text-zinc-400" /> : <UserIcon size={44} className="text-zinc-400" />
+            )}
+          </div>
+          <div className="min-w-0">
+            <p className="text-[10px] uppercase tracking-wide text-zinc-300 mb-1">{isTrack ? 'Трек' : 'Исполнитель'}</p>
+            <h2 className="text-2xl sm:text-4xl font-bold mb-1 truncate">{title}</h2>
+            <p className="text-sm text-zinc-300 truncate">{subtitle}</p>
+          </div>
         </div>
-        <p className="text-[10px] uppercase tracking-wide text-zinc-300 mb-1">{isTrack ? 'Трек' : 'Исполнитель'}</p>
-        <h2 className="text-2xl sm:text-3xl font-bold mb-1 truncate">{title}</h2>
-        <p className="text-sm text-zinc-300 truncate">{subtitle}</p>
         {isTrack && (
           <button
             onClick={(e) => { e.stopPropagation(); onOpenTrack(item); }}
@@ -190,19 +210,24 @@ const SpotifySearchResults: React.FC<Props> = ({
 
   return (
     <div className="space-y-8">
-      {(featured || sideTracks.length > 0) && (
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_1.2fr] gap-6">
-          <div>
-            <p className="text-xs uppercase tracking-wide text-zinc-400 font-semibold mb-2">Лучший результат</p>
-            {featured ? renderFeatured(featured) : (
-              <div className="rounded-lg bg-zinc-900 aspect-square flex items-center justify-center text-zinc-500">
-                Нет лучшего результата
-              </div>
-            )}
-          </div>
-          {sideTracks.length > 0 && (
+      {(featured || allTracks.length > 0) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+          {featured && (
             <div>
-              <p className="text-2xl font-bold mb-2">Песни</p>
+              <p className="text-xs uppercase tracking-wide text-zinc-400 font-semibold mb-2">Лучший результат</p>
+              {renderFeatured(featured)}
+            </div>
+          )}
+          {allTracks.length > 0 && (
+            <div>
+              <button
+                onClick={() => onOpenAllTracks(allTracks)}
+                className="flex items-center gap-2 mb-2 group"
+                title="Показать все треки"
+              >
+                <p className="text-2xl font-bold group-hover:underline">Песни</p>
+                <ChevronRight size={28} className="text-zinc-400 group-hover:text-white transition-colors shrink-0" />
+              </button>
               <div className="space-y-1">
                 {sideTracks.map(t => renderTrackRow(t))}
               </div>
@@ -214,25 +239,21 @@ const SpotifySearchResults: React.FC<Props> = ({
       {albums.length > 0 && (
         <section>
           <h2 className="text-2xl font-bold mb-3">Альбомы</h2>
-          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-2">
+          <div className="flex gap-3 overflow-x-auto hs-scrollbar pb-1.5" onWheel={handleWheel}>
             {albums.map(album => (
-              <div key={album.id} onClick={() => onOpenCollection(album)} className="group p-2 rounded-md hover:bg-zinc-800/80 cursor-pointer transition-colors">
-                <div className="aspect-square w-full rounded overflow-hidden mb-2 bg-zinc-700 flex items-center justify-center shadow">
-                  {album.imageUrl ? <img src={album.imageUrl} alt={album.name} className="w-full h-full object-cover transition-transform group-hover:scale-105" /> : <Music size={24} className="text-zinc-500" />}
+              <div key={album.id} onClick={() => onOpenCollection(album)} className="group w-32 shrink-0 p-2 rounded-md hover:bg-zinc-800/80 cursor-pointer transition-colors">
+                <div className="relative aspect-square w-full rounded-md overflow-hidden mb-2 bg-zinc-700 flex items-center justify-center shadow">
+                  {album.imageUrl ? <img src={album.imageUrl} alt={album.name} className="w-full h-full object-cover transition-transform group-hover:scale-105" /> : <Music size={20} className="text-zinc-500" />}
+                  {openingSearchCollectionId === album.id && (
+                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                      <Loader2 size={28} className="animate-spin text-white" />
+                    </div>
+                  )}
                 </div>
-                <h3 className="font-semibold text-xs sm:text-sm truncate">{album.name}</h3>
-                <p className="text-[11px] text-zinc-400 truncate">Альбом • {album.artist}</p>
+                <h3 className="font-semibold text-xs sm:text-sm truncate text-center">{album.name}</h3>
+                <p className="text-[11px] text-zinc-400 truncate text-center">Альбом • {album.artist}</p>
               </div>
             ))}
-          </div>
-        </section>
-      )}
-
-      {otherTracks.length > 0 && (
-        <section>
-          <h2 className="text-2xl font-bold mb-3">Треки</h2>
-          <div className="space-y-1">
-            {otherTracks.map(t => renderTrackRow(t))}
           </div>
         </section>
       )}
@@ -240,13 +261,13 @@ const SpotifySearchResults: React.FC<Props> = ({
       {artists.length > 0 && (
         <section>
           <h2 className="text-2xl font-bold mb-3">Исполнители</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+          <div className="flex gap-3 overflow-x-auto hs-scrollbar pb-1.5" onWheel={handleWheel}>
             {artists.map(artist => (
-              <div key={artist.id} className="flex flex-col items-center gap-2 p-4 rounded-md cursor-default hover:bg-white/10 transition-colors">
+              <div key={artist.id} className="flex flex-col items-center gap-2 p-3 rounded-md cursor-default hover:bg-white/10 transition-colors w-28 shrink-0">
                 <div className="w-24 h-24 rounded-full overflow-hidden bg-zinc-800 flex items-center justify-center">
                   {artist.imageUrl ? <img src={artist.imageUrl} alt={artist.name} className="w-full h-full object-cover" /> : <UserIcon size={32} className="text-zinc-400" />}
                 </div>
-                <h3 className="font-bold text-sm truncate">{artist.name}</h3>
+                <h3 className="font-bold text-sm truncate max-w-full">{artist.name}</h3>
                 <p className="text-xs text-zinc-400">Исполнитель</p>
               </div>
             ))}
@@ -257,16 +278,19 @@ const SpotifySearchResults: React.FC<Props> = ({
       {spotifyPlaylists.length > 0 && (
         <section>
           <h2 className="text-2xl font-bold mb-3">Плейлисты</h2>
-          <div className="space-y-2">
+          <div className="flex gap-3 overflow-x-auto hs-scrollbar pb-1.5" onWheel={handleWheel}>
             {spotifyPlaylists.map(pl => (
-              <div key={pl.id} onClick={() => onOpenCollection(pl)} className="flex items-center gap-3 p-2 rounded-md hover:bg-white/10 cursor-pointer">
-                <div className="w-12 h-12 rounded bg-zinc-800 overflow-hidden flex items-center justify-center shrink-0">
-                  {pl.imageUrl ? <img src={pl.imageUrl} alt={pl.name} className="w-full h-full object-cover" /> : <Music size={20} className="text-zinc-400" />}
+              <div key={pl.id} onClick={() => onOpenCollection(pl)} className="group w-32 shrink-0 p-2 rounded-md hover:bg-zinc-800/80 cursor-pointer transition-colors">
+                <div className="relative aspect-square w-full rounded-md overflow-hidden mb-2 bg-zinc-700 flex items-center justify-center shadow">
+                  {pl.imageUrl ? <img src={pl.imageUrl} alt={pl.name} className="w-full h-full object-cover transition-transform group-hover:scale-105" /> : <Music size={20} className="text-zinc-500" />}
+                  {openingSearchCollectionId === pl.id && (
+                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                      <Loader2 size={28} className="animate-spin text-white" />
+                    </div>
+                  )}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-sm truncate">{pl.name}</div>
-                  <div className="text-xs text-zinc-400 truncate">Плейлист {pl.owner ? `• ${pl.owner}` : ''}</div>
-                </div>
+                <h3 className="font-semibold text-xs sm:text-sm truncate text-center">{pl.name}</h3>
+                <p className="text-[11px] text-zinc-400 truncate text-center">Плейлист {pl.owner ? `• ${pl.owner}` : ''}</p>
               </div>
             ))}
           </div>
