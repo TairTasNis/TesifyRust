@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { auth, db, googleProvider } from '../services/firebase';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup } from 'firebase/auth';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, signInWithRedirect, getRedirectResult } from 'firebase/auth';
 import { ref, set } from 'firebase/database';
 import { Music, Mail, Lock, User, Calendar, Loader2 } from 'lucide-react';
 
@@ -16,6 +16,23 @@ export default function AuthScreen() {
 
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        getRedirectResult(auth).then(async (cred) => {
+            if (cred) {
+                const user = cred.user;
+                await set(ref(db, `users/${user.uid}`), {
+                    username: user.displayName?.split(' ')[0] || 'User',
+                    fullName: user.displayName || '',
+                    email: user.email,
+                    dob: '',
+                    createdAt: Date.now()
+                });
+            }
+        }).catch((err) => {
+            console.error("Redirect auth error", err);
+        });
+    }, []);
 
     const handleAuth = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -71,7 +88,18 @@ export default function AuthScreen() {
                 createdAt: Date.now()
             });
         } catch (err: any) {
-            setError(err.message || 'Ошибка входа через Google.');
+            if (err.code === 'auth/popup-blocked') {
+                try {
+                    await signInWithRedirect(auth, googleProvider);
+                    return;
+                } catch (redirectErr: any) {
+                    setError('Всплывающее окно заблокировано браузером. Разрешите всплывающие окна для сайта.');
+                }
+            } else if (err.code === 'auth/popup-closed-by-user') {
+                setError('Окно авторизации было закрыто.');
+            } else {
+                setError(err.message || 'Ошибка входа через Google.');
+            }
         } finally {
             setLoading(false);
         }

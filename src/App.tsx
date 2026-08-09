@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @fileoverview Main application backend module
  * @copyright Copyright (c) 2026 Tair Tasmukhambetov (@ttfotg)
  * @license TFG License
@@ -9,7 +9,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
-import { Home, Search, Library as LibraryIcon, Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Mic, Plus, Music, X, Loader2, Maximize2, Minimize2, Youtube, Menu, PenSquare, Trash2, ArrowLeft, Heart, Check, User as UserIcon, Clock, Settings as SettingsIcon, BarChart2, RefreshCw, MessageSquare, Edit2, Languages, Link as LinkIcon, Download, AlignLeft, AlignCenter, AlignRight, Radio } from 'lucide-react';
+import { Home, Search, Library as LibraryIcon, Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Mic, Plus, Music, X, Loader2, Maximize2, Minimize2, Youtube, Menu, PenSquare, Trash2, ArrowLeft, Heart, Check, User as UserIcon, Clock, Settings as SettingsIcon, BarChart2, RefreshCw, MessageSquare, Edit2, Languages, Link as LinkIcon, Download, AlignLeft, AlignCenter, AlignRight, Radio, ListMusic, ChevronRight, CheckSquare } from 'lucide-react';
 import { Track, Tab, Playlist, UserStats, Comment, SearchSource, SearchResultItem } from './types';
 import { fetchSpotifyData } from './services/spotify';
 import AuthScreen from './components/AuthScreen';
@@ -702,9 +702,12 @@ export default function App() {
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState('');
 
-  // Multi-Select tracking
+  // Multi-Select & Context Menu tracking
   const [selectedTrackIds, setSelectedTrackIds] = useState<Set<string>>(new Set());
   const [lastSelectedTrackIndex, setLastSelectedTrackIndex] = useState<number | null>(null);
+  const [trackContextMenu, setTrackContextMenu] = useState<{ x: number, y: number, track: Track } | null>(null);
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [isPlaylistSubmenuOpen, setIsPlaylistSubmenuOpen] = useState(false);
 
   const openTrackPage = (track: Track, context: string = '') => {
     setViewingTrack(track);
@@ -988,13 +991,29 @@ type SortField = 'default' | 'index' | 'title' | 'addedAt' | 'durationMs';
     checkUpdate();
   }, []);
 
+  const handleTrackContextMenu = (e: React.MouseEvent, track: Track, index: number, tracksList: Track[]) => {
+    e.preventDefault();
+    if (isSelectionMode) {
+      let newSelection = new Set(selectedTrackIds);
+      if (!newSelection.has(track.id)) {
+        newSelection = new Set([...newSelection, track.id]);
+        setSelectedTrackIds(newSelection);
+      }
+    }
+    setLastSelectedTrackIndex(index);
+    setTrackContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      track
+    });
+    setIsPlaylistSubmenuOpen(false);
+  };
+
   const handleTrackSelect = (e: React.MouseEvent, trackId: string, index: number, tracksList: Track[]) => {
     e.preventDefault();
     if (e.type === 'contextmenu') {
-      const newSelection = new Set(selectedTrackIds);
-      newSelection.add(trackId);
-      setSelectedTrackIds(newSelection);
-      setLastSelectedTrackIndex(index);
+      const track = tracksList.find(t => t.id === trackId);
+      if (track) handleTrackContextMenu(e, track, index, tracksList);
       return;
     }
 
@@ -1035,7 +1054,51 @@ type SortField = 'default' | 'index' | 'title' | 'addedAt' | 'durationMs';
       return pl;
     }));
     setSelectedTrackIds(new Set());
+    setIsSelectionMode(false);
     setIsMoveMenuOpen(false);
+  };
+
+  const downloadSingleTrack = async (track: Track) => {
+    try {
+      let ytid = (track as any).youtubeId;
+      if (!ytid && !track.url) {
+        const res = await fetch(`http://127.0.0.1:8000/search?q=${encodeURIComponent(track.artist + ' ' + track.title)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.results && data.results.length > 0) {
+            ytid = data.results[0].id;
+          }
+        }
+      }
+
+      const params = new URLSearchParams();
+      if (ytid) params.append('id', ytid);
+      if (track.url) params.append('url', track.url);
+      params.append('title', track.title || 'Track');
+      params.append('artist', track.artist || 'Artist');
+
+      const dlRes = await fetch(`http://127.0.0.1:8000/download?${params.toString()}`);
+      if (!dlRes.ok) throw new Error('Download failed');
+      const dlData = await dlRes.json();
+
+      if (dlData.download_url) {
+        const filename = dlData.filename || `${track.title} - ${track.artist}.mp3`;
+        const fileRes = await fetch(dlData.download_url);
+        if (!fileRes.ok) throw new Error('File fetch failed');
+        const blob = await fileRes.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(blobUrl);
+      }
+    } catch (err) {
+      console.error('Track download error:', err);
+      alert('Ошибка при скачивании трека.');
+    }
   };
 
   const currentPlayingPlaylist = getPlaylistById(currentPlayingPlaylistId);
@@ -1339,13 +1402,7 @@ type SortField = 'default' | 'index' | 'title' | 'addedAt' | 'durationMs';
   };
 
   const handlePlayPause = () => {
-    const playlist = currentPlayingPlaylist || getPlaylistById('favorites');
-    if (currentTrackIndex === -1 && playlist && playlist.tracks.length > 0) {
-      const sortedTracks = getSortedTracks(playlist.tracks);
-      const firstTrack = sortedTracks[0];
-      const absoluteIndex = playlist.tracks.findIndex(t => t.id === firstTrack.id);
-      playTrack(absoluteIndex, playlist.id);
-    } else if (currentTrackIndex !== -1) {
+    if (currentTrack) {
       if (!isHost && currentSessionId) {
          if (isPlaying) {
              setIsLocalPaused(true);
@@ -1358,6 +1415,15 @@ type SortField = 'default' | 'index' | 'title' | 'addedAt' | 'durationMs';
          }
       }
       setIsPlaying(!isPlaying);
+      return;
+    }
+
+    const playlist = currentPlayingPlaylist || getPlaylistById('favorites');
+    if (playlist && playlist.tracks.length > 0) {
+      const sortedTracks = getSortedTracks(playlist.tracks);
+      const firstTrack = sortedTracks[0];
+      const absoluteIndex = playlist.tracks.findIndex(t => t.id === firstTrack.id);
+      playTrack(absoluteIndex, playlist.id);
     }
   };
 
@@ -2506,8 +2572,20 @@ const handleNext = () => {
                   className="flex flex-col h-full flex-1"
                 >
                   <h1 className="text-3xl font-bold mb-6">Поиск</h1>
-                <form onSubmit={handleSearch} className="max-w-2xl mb-8 space-y-4">
-                  <div className="flex w-fit rounded-full bg-zinc-800/80 p-1 border border-white/10">
+                <form onSubmit={handleSearch} className="max-w-3xl w-full mx-auto mb-8 flex flex-col sm:flex-row items-center justify-center gap-3">
+                  <div className="relative flex-1 w-full">
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" size={20} />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Что хочешь послушать?"
+                      className="w-full bg-zinc-800 text-white rounded-full py-3 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-white/20"
+                    />
+                    <button type="submit" className="hidden">Искать</button>
+                  </div>
+
+                  <div className="flex w-fit rounded-full bg-zinc-800/80 p-1 border border-white/10 shrink-0">
                     <button
                       type="button"
                       onClick={() => setSearchSource('youtube')}
@@ -2525,24 +2603,12 @@ const handleNext = () => {
                       Spotify
                     </button>
                   </div>
-
-                  <div className="relative">
-                    <Search className="absolute left-3 top-3 text-zinc-400" size={20} />
-                    <input
-                      type="text"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Что хочешь послушать?"
-                      className="w-full bg-zinc-800 text-white rounded-full py-3 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-white/20"
-                    />
-                    <button type="submit" className="hidden">Искать</button>
-                  </div>
                 </form>
 
                 <div className="flex-1 overflow-y-auto no-scrollbar">
                   {isSearching ? (
                     <div className="flex items-center justify-center py-10 text-zinc-400">
-                      <Loader2 className="animate-spin mr-2" size={24} /> ?щем...
+                      <Loader2 className="animate-spin mr-2" size={24} /> Ищем...
                     </div>
                   ) : searchError ? (
                     <div className="text-red-400 py-4">{searchError}</div>
@@ -2807,7 +2873,7 @@ const handleNext = () => {
                         {!activePlaylist.isSystem && !isSearchPreviewActive && (
                           <label className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center cursor-pointer">
                             <PenSquare size={48} className="mb-2" />
-                            <span className="text-xs font-semibold">?зменить фото</span>
+                            <span className="text-xs font-semibold">Изменить фото</span>
                             <input
                               type="file"
                               accept="image/*"
@@ -3003,7 +3069,7 @@ const handleNext = () => {
                           transition={{ delay: sortedIndex * 0.05 }}
                           key={track.id}
                           onClick={(e) => handleTrackSelect(e, track.id, index, activePlaylist.tracks)}
-                          onContextMenu={(e) => handleTrackSelect(e, track.id, index, activePlaylist.tracks)}
+                          onContextMenu={(e) => handleTrackContextMenu(e, track, index, activePlaylist.tracks)}
                           className={`flex items-center gap-4 p-3 rounded-md cursor-pointer group select-none ${selectedTrackIds.has(track.id) ? 'bg-zinc-700/80' : 'hover:bg-white/10'}`}
                         >
                           <div className={`w-8 text-center text-zinc-400 group-hover:hidden ${currentTrackIndex === index && currentPlayingPlaylistId === activePlaylist.id ? 'text-green-500' : ''}`}>
@@ -3302,7 +3368,6 @@ const handleNext = () => {
                       { id: 'customization', label: 'Кастомизация' },
                       { id: 'account', label: 'Аккаунт' },
                       { id: 'audio', label: 'Аудио' },
-                      { id: 'downloads', label: 'Скачанная музыка' },
                       { id: 'about', label: 'О программе' },
                       { id: 'server', label: 'Сервер' }
                     ].map(tab => (
@@ -3451,7 +3516,7 @@ const handleNext = () => {
                               )}
                             </div>
                             <div>
-                              <p className="text-sm font-medium mb-2">?зменить аватар профиля</p>
+                              <p className="text-sm font-medium mb-2">Изменить аватар профиля</p>
                               <label className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded text-sm cursor-pointer transition-colors inline-block">
                                 Загрузить картинку
                                 <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
@@ -3501,7 +3566,7 @@ const handleNext = () => {
                                   }
                                 }
                               }
-                            }} className="text-blue-400 hover:underline text-sm block">?зменить пароль</button>
+                            }} className="text-blue-400 hover:underline text-sm block">Изменить пароль</button>
                           </div>
 
                           <div className="pt-4 border-t border-red-500/30">
@@ -3549,6 +3614,7 @@ const handleNext = () => {
                             <b>Скачивание:</b> При первом воспроизведении музыка кэшируется на ваше устройство. В следующий раз она включится мгновенно и без интернета.
                           </p>
                         </div>
+
                         <div className="pt-4 border-t border-white/10">
                           <h3 className="text-lg font-bold mb-2">Папка для скачивания (Backend)</h3>
                           <div className="flex gap-2">
@@ -3580,51 +3646,49 @@ const handleNext = () => {
                             </button>
                           </div>
                         </div>
-                      </div>
-                    )}
 
-                    {settingsSection === 'downloads' && (
-                      <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
-                        <div className="flex items-center justify-between">
-                          <h3 className="text-lg font-bold">Скачанные файлы в кэше ({downloadsInfo.files?.length || 0})</h3>
-                          <div className="text-sm text-zinc-400">
-                            Общий размер: {(downloadsInfo.total_size_bytes / (1024 * 1024)).toFixed(2)} МБ
-                          </div>
-                        </div>
-                        <div className="flex gap-2 mb-4">
-                          <button 
-                            onClick={async () => {
-                              if (confirm('Точно удалить всю скачанную музыку?')) {
-                                await fetch('http://127.0.0.1:8000/api/settings/downloads_all', { method: 'DELETE' });
-                                fetchDownloadsInfo();
-                              }
-                            }}
-                            className="bg-rose-500/20 text-rose-500 hover:bg-rose-500 hover:text-white px-4 py-2 rounded transition-colors text-sm"
-                          >
-                            Удалить всё
-                          </button>
-                        </div>
-                        <div className="bg-black/20 rounded-lg p-2 max-h-64 overflow-y-auto border border-white/5 space-y-1">
-                          {downloadsInfo.files && downloadsInfo.files.map((f: any) => (
-                            <div key={f.name} className="flex items-center justify-between p-2 hover:bg-white/5 rounded">
-                              <div className="truncate text-sm pr-4">{f.name}</div>
-                              <div className="flex items-center gap-4 shrink-0">
-                                <span className="text-xs text-zinc-400">{(f.size / (1024*1024)).toFixed(2)} МБ</span>
-                                <button 
-                                  onClick={async () => {
-                                    await fetch(`http://127.0.0.1:8000/api/settings/downloads/${encodeURIComponent(f.name)}`, { method: 'DELETE' });
-                                    fetchDownloadsInfo();
-                                  }}
-                                  className="text-zinc-500 hover:text-rose-500 transition-colors"
-                                >
-                                  <Trash2 size={16} />
-                                </button>
-                              </div>
+                        <div className="pt-4 border-t border-white/10">
+                          <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-bold">Скачанные файлы в кэше ({downloadsInfo.files?.length || 0})</h3>
+                            <div className="text-sm text-zinc-400">
+                              Общий размер: {(downloadsInfo.total_size_bytes / (1024 * 1024)).toFixed(2)} МБ
                             </div>
-                          ))}
-                          {(!downloadsInfo.files || downloadsInfo.files.length === 0) && (
-                            <div className="text-center text-zinc-500 py-4 text-sm">Нет скачанных файлов</div>
-                          )}
+                          </div>
+                          <div className="flex gap-2 mb-4">
+                            <button 
+                              onClick={async () => {
+                                if (confirm('Точно удалить всю скачанную музыку?')) {
+                                  await fetch('http://127.0.0.1:8000/api/settings/downloads_all', { method: 'DELETE' });
+                                  fetchDownloadsInfo();
+                                }
+                              }}
+                              className="bg-rose-500/20 text-rose-500 hover:bg-rose-500 hover:text-white px-4 py-2 rounded transition-colors text-sm"
+                            >
+                              Удалить всё
+                            </button>
+                          </div>
+                          <div className="bg-black/20 rounded-lg p-2 max-h-64 overflow-y-auto border border-white/5 space-y-1">
+                            {downloadsInfo.files && downloadsInfo.files.map((f: any) => (
+                              <div key={f.name} className="flex items-center justify-between p-2 hover:bg-white/5 rounded">
+                                <div className="truncate text-sm pr-4">{f.name}</div>
+                                <div className="flex items-center gap-4 shrink-0">
+                                  <span className="text-xs text-zinc-400">{(f.size / (1024*1024)).toFixed(2)} МБ</span>
+                                  <button 
+                                    onClick={async () => {
+                                      await fetch(`http://127.0.0.1:8000/api/settings/downloads/${encodeURIComponent(f.name)}`, { method: 'DELETE' });
+                                      fetchDownloadsInfo();
+                                    }}
+                                    className="text-zinc-500 hover:text-rose-500 transition-colors"
+                                  >
+                                    <Trash2 size={16} />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                            {(!downloadsInfo.files || downloadsInfo.files.length === 0) && (
+                              <div className="text-center text-zinc-500 py-4 text-sm">Нет скачанных файлов</div>
+                            )}
+                          </div>
                         </div>
                       </div>
                     )}
@@ -3819,38 +3883,181 @@ const handleNext = () => {
         </div>
       )}
 
-      {/* Multi-Select Action Bar */}
-      {selectedTrackIds.size > 0 && activePlaylistId && (
-        <div className="absolute bottom-28 left-1/2 -translate-x-1/2 bg-zinc-800 border border-white/10 shadow-2xl rounded-full px-6 py-3 flex items-center gap-4 z-50 animate-in slide-in-from-bottom-5">
-          <span className="text-white font-bold">{selectedTrackIds.size} выбрано</span>
-          <div className="w-px h-6 bg-white/10"></div>
+      {/* Track Vertical Context Menu */}
+      {trackContextMenu && (
+        <>
+          <div
+            className="fixed inset-0 z-[100]"
+            onClick={() => { setTrackContextMenu(null); setIsPlaylistSubmenuOpen(false); }}
+            onContextMenu={(e) => { e.preventDefault(); setTrackContextMenu(null); setIsPlaylistSubmenuOpen(false); }}
+          />
+          <div
+            style={{
+              top: `${Math.min(trackContextMenu.y, window.innerHeight - 320)}px`,
+              left: `${Math.min(trackContextMenu.x, window.innerWidth - 230)}px`
+            }}
+            className="fixed z-[101] w-56 bg-zinc-900 border border-white/10 rounded-xl shadow-2xl py-1.5 animate-in fade-in zoom-in-95 duration-100 text-white select-none"
+          >
+            <div className="px-3 py-1.5 text-xs font-semibold text-zinc-400 border-b border-white/10 mb-1 truncate">
+              {selectedTrackIds.size > 1 ? `${selectedTrackIds.size} выбрано` : trackContextMenu.track.title}
+            </div>
 
-          {/* Add to Queue Menu */}
+            {/* Выбрать */}
             <button
               onClick={() => {
-                const tracksToAdd = playlists.find(p => p.id === activePlaylistId)?.tracks.filter(t => selectedTrackIds.has(t.id)) || [];
+                setIsSelectionMode(true);
+                setSelectedTrackIds(prev => new Set([...prev, trackContextMenu.track.id]));
+                setTrackContextMenu(null);
+                setIsPlaylistSubmenuOpen(false);
+              }}
+              className="w-full text-left px-3.5 py-2 text-sm hover:bg-white/10 transition-colors flex items-center gap-2.5"
+            >
+              <CheckSquare size={16} className="text-zinc-400" />
+              <span>Выбрать</span>
+            </button>
+
+            {/* В очередь */}
+            <button
+              onClick={() => {
+                const activePl = playlists.find(p => p.id === activePlaylistId);
+                const tracksToAdd = activePl ? activePl.tracks.filter(t => selectedTrackIds.has(t.id)) : [trackContextMenu.track];
                 setUserQueue(prev => [...prev, ...tracksToAdd]);
                 setSelectedTrackIds(new Set());
+                setTrackContextMenu(null);
+                setIsPlaylistSubmenuOpen(false);
               }}
-              className="text-sm font-semibold hover:text-white transition-colors px-3 py-1.5 rounded-full hover:bg-white/10"
+              className="w-full text-left px-3.5 py-2 text-sm hover:bg-white/10 transition-colors flex items-center gap-2.5"
             >
-              В очередь
+              <ListMusic size={16} className="text-zinc-400" />
+              <span>В очередь</span>
             </button>
-            <div className="w-px h-6 bg-white/10"></div>
-            {/* Move Menu */}
+
+            {/* Добавить в плейлист */}
+            <div className="relative">
+              <button
+                onClick={() => setIsPlaylistSubmenuOpen(!isPlaylistSubmenuOpen)}
+                onMouseEnter={() => setIsPlaylistSubmenuOpen(true)}
+                className="w-full text-left px-3.5 py-2 text-sm hover:bg-white/10 transition-colors flex items-center justify-between"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Plus size={16} className="text-zinc-400" />
+                  <span>Добавить в плейлист</span>
+                </div>
+                <ChevronRight size={16} className="text-zinc-400" />
+              </button>
+
+              {isPlaylistSubmenuOpen && (
+                <div className="absolute left-full top-0 ml-1 w-52 bg-zinc-900 border border-white/10 rounded-xl shadow-2xl py-1.5 z-[102] animate-in fade-in zoom-in-95 duration-100">
+                  <div className="px-3 py-1 text-xs font-semibold text-zinc-400 border-b border-white/10 mb-1">Плейлисты</div>
+                  <div className="max-h-56 overflow-y-auto hs-scrollbar">
+                    {playlists.filter(p => !p.isSystem).map(pl => {
+                      const activePl = playlists.find(p => p.id === activePlaylistId);
+                      const selectedTracksList = activePl ? activePl.tracks.filter(t => selectedTrackIds.has(t.id)) : [trackContextMenu.track];
+                      const isSavedInPl = selectedTracksList.every(st => pl.tracks.some(t => isSameTrack(t, st)));
+                      return (
+                        <button
+                          key={pl.id}
+                          onClick={() => {
+                            setPlaylists(prev => prev.map(p => {
+                              if (p.id === pl.id) {
+                                if (isSavedInPl) {
+                                  return { ...p, tracks: p.tracks.filter(t => !selectedTracksList.some(st => isSameTrack(t, st))) };
+                                } else {
+                                  const existingIds = new Set(p.tracks.map(t => t.id));
+                                  const uniqueToAdd = selectedTracksList.filter(t => !existingIds.has(t.id)).map(t => ({ ...t, addedAt: Date.now() }));
+                                  return { ...p, tracks: [...p.tracks, ...uniqueToAdd] };
+                                }
+                              }
+                              return p;
+                            }));
+                          }}
+                          className="w-full text-left px-3.5 py-2 text-sm hover:bg-white/10 transition-colors flex items-center justify-between gap-2"
+                        >
+                          <span className="truncate">{pl.title}</span>
+                          {isSavedInPl && <Check size={16} className="text-green-500 shrink-0" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Скачать */}
+            <button
+              onClick={() => {
+                const activePl = playlists.find(p => p.id === activePlaylistId);
+                const tracksToDownload = (selectedTrackIds.size > 0 && activePl)
+                  ? activePl.tracks.filter(t => selectedTrackIds.has(t.id))
+                  : [trackContextMenu.track];
+                tracksToDownload.forEach(t => downloadSingleTrack(t));
+                setTrackContextMenu(null);
+                setIsPlaylistSubmenuOpen(false);
+              }}
+              className="w-full text-left px-3.5 py-2 text-sm hover:bg-white/10 transition-colors flex items-center gap-2.5"
+            >
+              <Download size={16} className="text-zinc-400" />
+              <span>Скачать</span>
+            </button>
+
+            {/* Удалить из плейлиста */}
+            {activePlaylistId && (
+              <button
+                onClick={() => {
+                  deleteSelectedTracks();
+                  setTrackContextMenu(null);
+                  setIsPlaylistSubmenuOpen(false);
+                }}
+                className="w-full text-left px-3.5 py-2 text-sm text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 transition-colors flex items-center gap-2.5 mt-1 border-t border-white/10"
+              >
+                <Trash2 size={16} />
+                <span>Удалить из плейлиста</span>
+              </button>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Multi-Select Action Bar */}
+      {isSelectionMode && selectedTrackIds.size > 0 && activePlaylistId && (
+        <div className="absolute bottom-28 left-1/2 -translate-x-1/2 bg-zinc-900/95 backdrop-blur border border-white/15 shadow-2xl rounded-full px-6 py-2.5 flex items-center gap-3 z-50 animate-in slide-in-from-bottom-5 text-white text-sm select-none">
+          <span className="font-bold text-green-400 shrink-0">{selectedTrackIds.size} выбрано</span>
+          
+          <div className="w-px h-5 bg-white/15"></div>
+
+          {/* Выбрать все */}
+          <button
+            onClick={() => {
+              const activePl = playlists.find(p => p.id === activePlaylistId);
+              if (activePl) {
+                if (selectedTrackIds.size === activePl.tracks.length) {
+                  setSelectedTrackIds(new Set());
+                } else {
+                  setSelectedTrackIds(new Set(activePl.tracks.map(t => t.id)));
+                }
+              }
+            }}
+            className="hover:text-white transition-colors px-3 py-1.5 rounded-full hover:bg-white/10 font-medium flex items-center gap-1.5"
+          >
+            <CheckSquare size={16} />
+            <span>{activePlaylistId && selectedTrackIds.size === (playlists.find(p => p.id === activePlaylistId)?.tracks.length || 0) ? 'Снять выделение' : 'Выбрать все'}</span>
+          </button>
+
+          {/* Переместить в плейлист */}
           <div className="relative">
             <button
               onClick={() => setIsMoveMenuOpen(!isMoveMenuOpen)}
-              className={`text-sm font-semibold hover:text-white transition-colors px-3 py-1.5 rounded-full ${isMoveMenuOpen ? 'bg-white/20 text-white' : 'hover:bg-white/10'}`}
+              className={`hover:text-white transition-colors px-3 py-1.5 rounded-full font-medium flex items-center gap-1.5 ${isMoveMenuOpen ? 'bg-white/20 text-white' : 'hover:bg-white/10'}`}
             >
-              Переместить
+              <Plus size={16} />
+              <span>Переместить в плейлист</span>
             </button>
             {isMoveMenuOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setIsMoveMenuOpen(false)}></div>
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 bg-zinc-900 border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden pb-1 animate-in fade-in zoom-in-95 duration-100">
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-52 bg-zinc-900 border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden pb-1 animate-in fade-in zoom-in-95 duration-100">
                   <div className="px-3 py-2 text-xs font-semibold text-zinc-400 border-b border-white/10 mb-1">Выберите плейлист</div>
-                  {playlists.filter(p => p.id !== activePlaylistId).map(pl => (
+                  {playlists.filter(p => p.id !== activePlaylistId && !p.isSystem).map(pl => (
                     <button
                       key={pl.id}
                       onClick={() => {
@@ -3858,7 +4065,7 @@ const handleNext = () => {
                         setPlaylists(prev => prev.map(p => {
                           if (p.id === pl.id) {
                             const existingIds = new Set(p.tracks.map(t => t.id));
-                            const uniqueTracksToMove = tracksToMove.filter(t => !existingIds.has(t.id));
+                            const uniqueTracksToMove = tracksToMove.filter(t => !existingIds.has(t.id)).map(t => ({ ...t, addedAt: Date.now() }));
                             return { ...p, tracks: [...p.tracks, ...uniqueTracksToMove] };
                           }
                           if (p.id === activePlaylistId) {
@@ -3873,6 +4080,7 @@ const handleNext = () => {
                         }
 
                         setSelectedTrackIds(new Set());
+                        setIsSelectionMode(false);
                         setIsMoveMenuOpen(false);
                       }}
                       className="w-full text-left px-4 py-2 text-sm hover:bg-zinc-800 transition-colors truncate"
@@ -3885,12 +4093,39 @@ const handleNext = () => {
             )}
           </div>
 
-          <button onClick={deleteSelectedTracks} className="text-sm font-semibold text-rose-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors px-3 py-1.5 rounded-full">
-            Удалить
+          {/* Скачать */}
+          <button
+            onClick={() => {
+              const activePl = playlists.find(p => p.id === activePlaylistId);
+              const tracksToDownload = activePl ? activePl.tracks.filter(t => selectedTrackIds.has(t.id)) : [];
+              tracksToDownload.forEach(t => downloadSingleTrack(t));
+              setSelectedTrackIds(new Set());
+              setIsSelectionMode(false);
+            }}
+            className="hover:text-white transition-colors px-3 py-1.5 rounded-full hover:bg-white/10 font-medium flex items-center gap-1.5"
+          >
+            <Download size={16} />
+            <span>Скачать</span>
           </button>
 
-          <button onClick={() => setSelectedTrackIds(new Set())} className="text-zinc-400 hover:text-white transition-colors p-1.5 rounded-full hover:bg-white/10 ml-2" title="Отменить выделение">
-            <X size={20} />
+          {/* Удалить из плейлиста */}
+          <button
+            onClick={() => {
+              deleteSelectedTracks();
+            }}
+            className="text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors px-3 py-1.5 rounded-full font-medium flex items-center gap-1.5"
+          >
+            <Trash2 size={16} />
+            <span>Удалить с плейлиста</span>
+          </button>
+
+          {/* Сброс */}
+          <button
+            onClick={() => { setSelectedTrackIds(new Set()); setIsSelectionMode(false); }}
+            className="text-zinc-400 hover:text-white transition-colors p-1.5 rounded-full hover:bg-white/10 ml-1"
+            title="Отменить выделение"
+          >
+            <X size={18} />
           </button>
         </div>
       )}
@@ -4729,7 +4964,7 @@ function LyricsModal({ isOpen, onClose, currentTrack, currentTime, onSeek, isPla
                 />
               </div>
               <div>
-                <label className="block text-xs text-zinc-400 mb-1 uppercase font-bold tracking-wider">?сполнитель (необязательно)</label>
+                <label className="block text-xs text-zinc-400 mb-1 uppercase font-bold tracking-wider">Исполнитель (необязательно)</label>
                 <input
                   type="text"
                   value={artistName}

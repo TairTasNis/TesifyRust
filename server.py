@@ -541,13 +541,42 @@ async def delete_all_downloads():
                 os.remove(path)
     return {"status": "success"}
 
-# СТАРЫЙ МЕТОД: Оставляем на случай, если вы захотите именно скачать
+def sanitize_filename(name: str) -> str:
+    if not name:
+        return ""
+    cleaned = re.sub(r'[\\/*?:"<>|]', '', name)
+    return cleaned.strip()
+
 @app.get("/download")
-async def download_audio(url: str):
+async def download_audio(id: str = None, url: str = None, title: str = "Track", artist: str = "Artist"):
     try:
+        safe_title = sanitize_filename(title) or "Track"
+        safe_artist = sanitize_filename(artist) or "Artist"
+        
+        target_name = f"{safe_title} - {safe_artist}"
+        filename = f"{target_name}.mp3"
+        target_path = os.path.join(DOWNLOAD_DIR, filename)
+
+        from urllib.parse import quote
+        if os.path.exists(target_path):
+            return {
+                "status": "success",
+                "title": title,
+                "artist": artist,
+                "filename": filename,
+                "download_url": f"http://127.0.0.1:8000/local_files/{quote(filename)}"
+            }
+
+        target_url = url
+        if not target_url and id:
+            target_url = f"https://www.youtube.com/watch?v={id}"
+            
+        if not target_url:
+            raise HTTPException(status_code=400, detail="Missing id or url parameter")
+
         ydl_opts = {
             'format': 'bestaudio/best',
-            'outtmpl': f'{DOWNLOAD_DIR}/%(id)s.%(ext)s',
+            'outtmpl': os.path.join(DOWNLOAD_DIR, f'{target_name}.%(ext)s'),
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
                 'preferredcodec': 'mp3',
@@ -558,15 +587,17 @@ async def download_audio(url: str):
         }
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            title = info.get('title', 'Unknown')
-            video_id = info.get('id')
-            filename = f"{video_id}.mp3" 
-            
-            return {"status": "success", "title": title, "filename": filename}
+            info = ydl.extract_info(target_url, download=True)
+            return {
+                "status": "success",
+                "title": title,
+                "artist": artist,
+                "filename": filename,
+                "download_url": f"http://127.0.0.1:8000/local_files/{quote(filename)}"
+            }
             
     except Exception as e:
-        print(f"Ошибка: {e}")
+        print(f"Download error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # Подключение фронтенда из папки dist (для PyInstaller)
