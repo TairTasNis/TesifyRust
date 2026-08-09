@@ -14,6 +14,7 @@ import { Track, Tab, Playlist, UserStats, Comment, SearchSource, SearchResultIte
 import { fetchSpotifyData } from './services/spotify';
 import AuthScreen from './components/AuthScreen';
 import SpotifySearchResults from './components/SpotifySearchResults';
+import DownloadsPanel, { DownloadTaskUI } from './components/DownloadsPanel';
 import { auth, db } from './services/firebase';
 import { onAuthStateChanged, signOut, updatePassword, updateProfile, deleteUser, EmailAuthProvider, reauthenticateWithCredential, linkWithPopup, GoogleAuthProvider, type User } from 'firebase/auth';
 import { ref, get, set, onValue, push, remove, update } from 'firebase/database';
@@ -621,6 +622,8 @@ export default function App() {
   const [serverStatusData, setServerStatusData] = useState<any>(null);
   const [serverLogs, setServerLogs] = useState<any[]>([]);
   const [serverLogsLoading, setServerLogsLoading] = useState(false);
+  const [downloadTasks, setDownloadTasks] = useState<DownloadTaskUI[]>([]);
+  const [downloadPanelOpen, setDownloadPanelOpen] = useState(true);
 
   const fetchSysInfo = async () => {
     try {
@@ -967,6 +970,35 @@ type SortField = 'default' | 'index' | 'title' | 'addedAt' | 'durationMs';
     };
   }, []);
 
+  // Poll download tasks from the Rust backend for the downloads panel
+  useEffect(() => {
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await fetch('http://127.0.0.1:8000/api/downloads');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        const tasks = data.tasks || [];
+        const now = Date.now();
+        const hasActive = tasks.some((t: any) =>
+          t.state === 'queued' || t.state === 'downloading' || t.state === 'processing' || t.state === 'retrying'
+        );
+        const visible = tasks.filter((t: any) =>
+          (t.state === 'done' || t.state === 'error')
+            ? (hasActive || (t.finished_at && now - t.finished_at < 5000))
+            : true
+        );
+        setDownloadTasks(visible);
+      } catch (e) {
+        // backend offline
+      }
+    };
+    poll();
+    const interval = setInterval(poll, 1000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, []);
+
   // Проверка обновлений
   useEffect(() => {
     const checkUpdate = async () => {
@@ -1059,6 +1091,7 @@ type SortField = 'default' | 'index' | 'title' | 'addedAt' | 'durationMs';
   };
 
   const downloadSingleTrack = async (track: Track) => {
+    setDownloadPanelOpen(true);
     try {
       let ytid = (track as any).youtubeId;
       if (!ytid && !track.url) {
@@ -1078,7 +1111,11 @@ type SortField = 'default' | 'index' | 'title' | 'addedAt' | 'durationMs';
       params.append('artist', track.artist || 'Artist');
 
       const dlRes = await fetch(`http://127.0.0.1:8000/download?${params.toString()}`);
-      if (!dlRes.ok) throw new Error('Download failed');
+      if (!dlRes.ok) {
+        let detail = '';
+        try { const e = await dlRes.json(); detail = e.detail || ''; } catch { /* ignore */ }
+        throw new Error(detail || `Download failed (HTTP ${dlRes.status})`);
+      }
       const dlData = await dlRes.json();
 
       if (dlData.download_url) {
@@ -1095,9 +1132,10 @@ type SortField = 'default' | 'index' | 'title' | 'addedAt' | 'durationMs';
         document.body.removeChild(a);
         URL.revokeObjectURL(blobUrl);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Track download error:', err);
-      alert('Ошибка при скачивании трека.');
+      const msg = err?.message || '';
+      alert(msg ? `Не удалось скачать трек: ${msg}` : 'Ошибка при скачивании трека.');
     }
   };
 
@@ -4128,6 +4166,11 @@ const handleNext = () => {
             <X size={18} />
           </button>
         </div>
+      )}
+
+      {/* Downloads Panel (above player) */}
+      {downloadPanelOpen && (
+        <DownloadsPanel tasks={downloadTasks} onClose={() => setDownloadPanelOpen(false)} />
       )}
 
       {/* Player */}

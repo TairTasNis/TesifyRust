@@ -30,7 +30,13 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use tokio::{fs, net::TcpListener, process::Command, time::timeout};
+use tokio::{
+    fs,
+    io::{AsyncBufReadExt, BufReader},
+    net::TcpListener,
+    process::Command,
+    time::timeout,
+};
 use tokio_util::io::ReaderStream;
 use tower_http::cors::{Any, CorsLayer};
 use urlencoding::encode;
@@ -62,6 +68,8 @@ struct BackendInner {
     last_ping_time: Mutex<Instant>,
     logs: Mutex<VecDeque<LogEntry>>,
     stream_url_cache: Mutex<HashMap<String, String>>,
+    downloads: Mutex<HashMap<String, DownloadTask>>,
+    next_task_id: std::sync::atomic::AtomicU64,
     http: Client,
     yt_dlp: YtDlpRunner,
 }
@@ -80,13 +88,29 @@ struct LogEntry {
     msg: String,
 }
 
+#[derive(Clone, Serialize)]
+struct DownloadTask {
+    task_id: String,
+    name: String,
+    state: String,
+    progress: f32,
+    downloaded_bytes: u64,
+    total_bytes: Option<u64>,
+    speed_bps: Option<f64>,
+    eta_secs: Option<i64>,
+    error: Option<String>,
+    filename: Option<String>,
+    created_at: i64,
+    finished_at: Option<i64>,
+}
+
 #[derive(Clone, Deserialize, Serialize)]
 struct AppConfig {
     #[serde(default = "default_download_dir")]
     download_dir: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct ApiError {
     status: StatusCode,
     message: String,
@@ -123,7 +147,10 @@ struct ProxyQuery {
 
 #[derive(Deserialize)]
 struct DownloadQuery {
-    url: String,
+    id: Option<String>,
+    url: Option<String>,
+    title: Option<String>,
+    artist: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -197,6 +224,8 @@ impl BackendState {
                 last_ping_time: Mutex::new(Instant::now()),
                 logs: Mutex::new(VecDeque::with_capacity(500)),
                 stream_url_cache: Mutex::new(HashMap::new()),
+                downloads: Mutex::new(HashMap::new()),
+                next_task_id: std::sync::atomic::AtomicU64::new(0),
                 http,
             }),
         };
@@ -219,6 +248,56 @@ impl BackendState {
 
     fn download_dir(&self) -> PathBuf {
         self.inner.download_dir.lock().clone()
+    }
+
+    fn next_download_id(&self) -> String {
+        let n = self
+            .inner
+            .next_task_id
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        format!("dl-{n}")
+    }
+
+    fn register_download(&self, task_id: String, name: String) {
+        let now = now_ms();
+        let mut downloads = self.inner.downloads.lock();
+        downloads.retain(|_, task| {
+            if task.state == "done" || task.state == "error" {
+                task.finished_at.map_or(true, |f| now - f < 10 * 60 * 1000)
+            } else {
+                true
+            }
+        });
+        downloads.insert(
+            task_id.clone(),
+            DownloadTask {
+                task_id,
+                name,
+                state: "queued".to_string(),
+                progress: 0.0,
+                downloaded_bytes: 0,
+                total_bytes: None,
+                speed_bps: None,
+                eta_secs: None,
+                error: None,
+                filename: None,
+                created_at: now,
+                finished_at: None,
+            },
+        );
+    }
+
+    fn update_download(&self, task_id: &str, f: impl FnOnce(&mut DownloadTask)) {
+        if let Some(task) = self.inner.downloads.lock().get_mut(task_id) {
+            f(task);
+        }
+    }
+
+    fn download_tasks(&self) -> Vec<DownloadTask> {
+        let mut tasks: Vec<DownloadTask> =
+            self.inner.downloads.lock().values().cloned().collect();
+        tasks.sort_by_key(|t| t.created_at);
+        tasks
     }
 }
 
@@ -282,6 +361,7 @@ fn router(state: BackendState) -> Router {
         .route("/api/shutdown", post(shutdown))
         .route("/api/server-status", get(server_status))
         .route("/api/logs", get(logs))
+        .route("/api/downloads", get(download_tasks_list))
         .route("/search", get(search_youtube))
         .route("/api/search/spotify", get(search_spotify))
         .route("/api/translate", get(translate_text))
@@ -346,6 +426,10 @@ async fn logs(State(state): State<BackendState>, Query(query): Query<LogsQuery>)
     let start = total.saturating_sub(n);
     let selected: Vec<LogEntry> = logs.iter().skip(start).cloned().collect();
     Json(json!({ "logs": selected, "total": total }))
+}
+
+async fn download_tasks_list(State(state): State<BackendState>) -> Json<Value> {
+    Json(json!({ "tasks": state.download_tasks() }))
 }
 
 async fn search_youtube(
@@ -686,18 +770,180 @@ async fn download_audio(
     State(state): State<BackendState>,
     Query(query): Query<DownloadQuery>,
 ) -> Result<Json<Value>, ApiError> {
-    let info = ytdlp_info(&state, &query.url).await?;
-    let title = string_at(&info, &["title"]).unwrap_or_else(|| "Unknown".to_string());
-    let video_id =
-        string_at(&info, &["id"]).ok_or_else(|| ApiError::internal("Missing media id"))?;
+    let input = query
+        .id
+        .clone()
+        .filter(|s| !s.trim().is_empty())
+        .or_else(|| query.url.clone().filter(|s| !s.trim().is_empty()))
+        .ok_or_else(|| ApiError::bad_request("Missing id or url parameter"))?;
 
-    download_audio_to_dir(&state, &query.url).await?;
+    let task_id = state.next_download_id();
+    let placeholder = match (&query.title, &query.artist) {
+        (Some(t), Some(a)) if !t.trim().is_empty() && !a.trim().is_empty() => {
+            build_download_name(t, a)
+        }
+        _ => "Подготовка...".to_string(),
+    };
+    state.register_download(task_id.clone(), placeholder);
 
-    Ok(Json(json!({
-        "status": "success",
-        "title": title,
-        "filename": format!("{video_id}.mp3")
-    })))
+    let result: Result<(String, String, String), ApiError> = async {
+        let info = ytdlp_info(&state, &input).await?;
+        let entry = first_entry_or_self(&info);
+        let info_title = string_at(entry, &["title"]).unwrap_or_else(|| "Unknown".to_string());
+        let info_artist = string_at(entry, &["uploader"])
+            .or_else(|| string_at(entry, &["channel"]))
+            .or_else(|| string_at(entry, &["artist"]))
+            .unwrap_or_default();
+
+        let title = query
+            .title
+            .clone()
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or(info_title);
+        let artist = query
+            .artist
+            .clone()
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or(info_artist);
+
+        let target_name = build_download_name(&title, &artist);
+        let filename = format!("{target_name}.mp3");
+        state.update_download(&task_id, |t| {
+            t.name = format!("{title} - {artist}");
+        });
+
+        let local_path = state.download_dir().join(&filename);
+        if !local_path.exists() {
+            let mut last_err: Option<ApiError> = None;
+            for attempt in 0..2 {
+                match download_audio_named(&state, &input, &target_name, &task_id).await {
+                    Ok(()) => {
+                        last_err = None;
+                        break;
+                    }
+                    Err(err) => {
+                        last_err = Some(err.clone());
+                        if attempt == 0 {
+                            state.update_download(&task_id, |t| {
+                                t.state = "retrying".to_string();
+                                t.error = Some(err.message.clone());
+                                t.progress = 0.0;
+                                t.downloaded_bytes = 0;
+                                t.speed_bps = None;
+                                t.eta_secs = None;
+                            });
+                            tokio::time::sleep(Duration::from_millis(800)).await;
+                        }
+                    }
+                }
+            }
+            if let Some(err) = last_err {
+                return Err(err);
+            }
+        }
+        ensure_named_audio(&state, &target_name).await?;
+
+        Ok((title, artist, filename))
+    }
+    .await;
+
+    match result {
+        Ok((title, artist, filename)) => {
+            state.update_download(&task_id, |t| {
+                t.state = "done".to_string();
+                t.progress = 100.0;
+                t.error = None;
+                t.filename = Some(filename.clone());
+                t.finished_at = Some(now_ms());
+            });
+            Ok(Json(json!({
+                "status": "success",
+                "title": title,
+                "artist": artist,
+                "filename": filename,
+                "task_id": task_id,
+                "download_url": format!(
+                    "http://127.0.0.1:{DEFAULT_PORT}/local_files/{}",
+                    encode(&filename)
+                )
+            })))
+        }
+        Err(err) => {
+            state.update_download(&task_id, |t| {
+                t.state = "error".to_string();
+                t.error = Some(err.message.clone());
+                t.finished_at = Some(now_ms());
+            });
+            Err(err)
+        }
+    }
+}
+
+fn now_ms() -> i64 {
+    Utc::now().timestamp_millis()
+}
+
+async fn ensure_named_audio(state: &BackendState, target_name: &str) -> Result<(), ApiError> {
+    let dir = state.download_dir();
+    let expected = format!("{target_name}.mp3");
+    let expected_path = dir.join(&expected);
+    if expected_path.exists() {
+        return Ok(());
+    }
+
+    let mut entries = fs::read_dir(&dir)
+        .await
+        .map_err(|e| ApiError::internal(format!("Cannot read downloads directory: {e}")))?;
+    while let Some(entry) = entries
+        .next_entry()
+        .await
+        .map_err(|e| ApiError::internal(format!("Cannot read downloads entry: {e}")))?
+    {
+        let name = entry.file_name().to_string_lossy().to_string();
+        let stem = name
+            .rsplit_once('.')
+            .map(|(stem, _)| stem.to_string())
+            .unwrap_or_else(|| name.clone());
+        if stem == target_name && !entry.path().eq(&expected_path) {
+            let _ = fs::rename(entry.path(), &expected_path).await;
+            break;
+        }
+    }
+    Ok(())
+}
+
+fn build_download_name(title: &str, artist: &str) -> String {
+    let safe_title = sanitize_filename(title);
+    let safe_artist = sanitize_filename(artist);
+    let safe_title = if safe_title.is_empty() {
+        "Track".to_string()
+    } else {
+        safe_title
+    };
+    let safe_artist = if safe_artist.is_empty() {
+        "Artist".to_string()
+    } else {
+        safe_artist
+    };
+    format!("{safe_title} - {safe_artist}")
+}
+
+fn sanitize_filename(name: &str) -> String {
+    name.chars()
+        .filter(|c| !matches!(c, '\\' | '/' | '*' | '?' | '"' | '<' | '>' | '|' | ':'))
+        .collect::<String>()
+        .trim()
+        .trim_end_matches('.')
+        .trim()
+        .to_string()
+}
+
+fn first_entry_or_self(value: &Value) -> &Value {
+    value
+        .get("entries")
+        .and_then(Value::as_array)
+        .and_then(|entries| entries.first())
+        .unwrap_or(value)
 }
 
 async fn extract_spotify_playlist(
@@ -1094,6 +1340,219 @@ async fn download_audio_to_dir(state: &BackendState, input: &str) -> Result<(), 
         YT_DLP_DOWNLOAD_TIMEOUT_SECS,
     )
     .await
+}
+
+async fn download_audio_named(
+    state: &BackendState,
+    input: &str,
+    target_name: &str,
+    task_id: &str,
+) -> Result<(), ApiError> {
+    let input = normalize_media_input(input);
+    let outtmpl = state
+        .download_dir()
+        .join(format!("{target_name}.%(ext)s"));
+    let outtmpl = outtmpl.to_string_lossy().to_string();
+
+    let mut cmd = make_ytdlp_command(&state.inner.yt_dlp);
+    cmd.current_dir(&state.inner.data_dir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    add_tool_env(&mut cmd, &state.inner.root_dir, &state.inner.yt_dlp);
+    hide_console_window(&mut cmd);
+
+    cmd.arg("--newline");
+    cmd.arg("--progress-template").arg(
+        "download:%(progress.status)s|%(progress.downloaded_bytes)s|%(progress.total_bytes)s|%(progress.speed)s|%(progress.eta)s|%(progress._percent_str)s",
+    );
+    cmd.arg("--no-playlist");
+    cmd.arg("--format").arg("bestaudio/best");
+    cmd.arg("--extract-audio");
+    cmd.arg("--audio-format").arg("mp3");
+    cmd.arg("--audio-quality").arg("192K");
+    cmd.arg("--no-warnings");
+    cmd.arg("--output").arg(&outtmpl);
+    cmd.arg(&input);
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| ApiError::internal(format!("yt-dlp failed to start: {e}")))?;
+
+    let stdout = child.stdout.take().ok_or_else(|| {
+        ApiError::internal("Cannot capture yt-dlp stdout for progress reporting")
+    })?;
+    let stderr = child.stderr.take().ok_or_else(|| {
+        ApiError::internal("Cannot capture yt-dlp stderr for progress reporting")
+    })?;
+
+    let captured: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+
+    let st = state.clone();
+    let tid = task_id.to_string();
+    let stdout_reader = tokio::spawn(async move {
+        let mut reader = BufReader::new(stdout);
+        let mut buf = String::new();
+        loop {
+            buf.clear();
+            match reader.read_line(&mut buf).await {
+                Ok(0) | Err(_) => break,
+                Ok(_) => consume_ytdlp_line(&buf, &st, &tid),
+            }
+        }
+    });
+
+    let lines = captured.clone();
+    let stderr_reader = tokio::spawn(async move {
+        let mut reader = BufReader::new(stderr);
+        let mut buf = String::new();
+        loop {
+            buf.clear();
+            match reader.read_line(&mut buf).await {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {
+                    if parse_download_progress(&buf).is_none() {
+                        let line = buf.trim();
+                        if !line.is_empty() {
+                            let mut logs = lines.lock();
+                            logs.push(line.to_string());
+                            if logs.len() > 40 {
+                                logs.remove(0);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    let wait_result = timeout(
+        Duration::from_secs(YT_DLP_DOWNLOAD_TIMEOUT_SECS),
+        child.wait(),
+    )
+    .await;
+    let _ = stdout_reader.await;
+    let _ = stderr_reader.await;
+
+    let status = match wait_result {
+        Err(_) => return Err(ApiError::internal("yt-dlp timed out")),
+        Ok(Err(e)) => return Err(ApiError::internal(format!("yt-dlp failed: {e}"))),
+        Ok(Ok(s)) => s,
+    };
+
+    if !status.success() {
+        let logs = captured.lock();
+        let error_line = logs.iter().rev().find(|l| l.contains("ERROR:"));
+        let details = match error_line {
+            Some(line) => line.to_string(),
+            None => logs
+                .iter()
+                .rev()
+                .take(6)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("\n"),
+        };
+        let details = if details.trim().is_empty() {
+            "yt-dlp download failed".to_string()
+        } else {
+            details
+        };
+        return Err(ApiError::internal(format!("yt-dlp error: {details}")));
+    }
+
+    Ok(())
+}
+
+fn consume_ytdlp_line(line: &str, state: &BackendState, task_id: &str) {
+    if let Some(parsed) = parse_download_progress(line) {
+        state.update_download(task_id, |t| {
+            if parsed.status == "finished" {
+                t.state = "processing".to_string();
+                t.progress = 100.0;
+            } else {
+                t.state = "downloading".to_string();
+                t.downloaded_bytes = parsed.downloaded_bytes;
+                t.total_bytes = parsed.total_bytes;
+                t.speed_bps = parsed.speed;
+                t.eta_secs = parsed.eta;
+                match parsed.percent {
+                    Some(p) => t.progress = p,
+                    None if parsed.total_bytes.is_none() => t.progress = -1.0,
+                    None => {}
+                }
+            }
+        });
+    }
+}
+
+struct ParsedProgress {
+    status: String,
+    downloaded_bytes: u64,
+    total_bytes: Option<u64>,
+    speed: Option<f64>,
+    eta: Option<i64>,
+    percent: Option<f32>,
+}
+
+fn parse_download_progress(line: &str) -> Option<ParsedProgress> {
+    // yt-dlp --progress-template emits e.g.:
+    //   downloading|12345|629172|8770012.17|12| 45.6%
+    //   finished|629172|629172|1072865.75|NA|100.0%
+    // The "download:" part of the template is consumed as the progress type
+    // selector, so it never appears in the output.
+    let line = line.trim();
+    let mut parts = line.split('|');
+    let status = parts.next()?;
+    if status != "downloading" && status != "finished" {
+        return None;
+    }
+
+    let to_u64 = |s: Option<&str>| -> Option<u64> {
+        let t = s?.trim();
+        if t.is_empty() || t.eq_ignore_ascii_case("NA") {
+            None
+        } else {
+            t.parse().ok()
+        }
+    };
+    let to_f64 = |s: Option<&str>| -> Option<f64> {
+        let t = s?.trim();
+        if t.is_empty() || t.eq_ignore_ascii_case("NA") {
+            None
+        } else {
+            t.parse().ok()
+        }
+    };
+    let to_i64 = |s: Option<&str>| -> Option<i64> {
+        let t = s?.trim();
+        if t.is_empty() || t.eq_ignore_ascii_case("NA") {
+            None
+        } else {
+            t.parse().ok()
+        }
+    };
+
+    let downloaded_bytes = to_u64(parts.next()).unwrap_or(0);
+    let total_bytes = to_u64(parts.next());
+    let speed = to_f64(parts.next());
+    let eta = to_i64(parts.next());
+    let percent = parts.next().and_then(|s| {
+        let t = s.trim().trim_end_matches('%').trim();
+        if t.is_empty() || t.eq_ignore_ascii_case("NA") {
+            None
+        } else {
+            t.parse::<f32>().ok()
+        }
+    });
+
+    Some(ParsedProgress {
+        status: status.to_string(),
+        downloaded_bytes,
+        total_bytes,
+        speed,
+        eta,
+        percent,
+    })
 }
 
 async fn ytdlp_json(
