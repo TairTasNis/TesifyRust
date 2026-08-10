@@ -14,7 +14,7 @@ import { Track, Tab, Playlist, UserStats, Comment, SearchSource, SearchResultIte
 import { fetchSpotifyData } from './services/spotify';
 import AuthScreen from './components/AuthScreen';
 import SpotifySearchResults from './components/SpotifySearchResults';
-import DownloadsPanel, { DownloadTaskUI } from './components/DownloadsPanel';
+import DownloadsPanel, { DownloadTaskUI, DownloadsDetailsPage } from './components/DownloadsPanel';
 import { auth, db } from './services/firebase';
 import { onAuthStateChanged, signOut, updatePassword, updateProfile, deleteUser, EmailAuthProvider, reauthenticateWithCredential, linkWithPopup, GoogleAuthProvider, type User } from 'firebase/auth';
 import { ref, get, set, onValue, push, remove, update } from 'firebase/database';
@@ -624,6 +624,14 @@ export default function App() {
   const [serverLogsLoading, setServerLogsLoading] = useState(false);
   const [downloadTasks, setDownloadTasks] = useState<DownloadTaskUI[]>([]);
   const [downloadPanelOpen, setDownloadPanelOpen] = useState(true);
+  const [downloadRefreshToken, setDownloadRefreshToken] = useState(0);
+  const [downloadPendingCount, setDownloadPendingCount] = useState(0);
+  const [downloadTotalCount, setDownloadTotalCount] = useState(0);
+  const [downloadQueueTracks, setDownloadQueueTracks] = useState<Track[]>([]);
+  const [downloadCurrentTrack, setDownloadCurrentTrack] = useState<Track | null>(null);
+  const [downloadDetailsOpen, setDownloadDetailsOpen] = useState(false);
+  const downloadQueueRef = useRef<Track[]>([]);
+  const downloadWorkerRunningRef = useRef(false);
 
   const fetchSysInfo = async () => {
     try {
@@ -984,20 +992,22 @@ type SortField = 'default' | 'index' | 'title' | 'addedAt' | 'durationMs';
         const hasActive = tasks.some((t: any) =>
           t.state === 'queued' || t.state === 'downloading' || t.state === 'processing' || t.state === 'retrying'
         );
-        const visible = tasks.filter((t: any) =>
-          (t.state === 'done' || t.state === 'error')
-            ? (hasActive || (t.finished_at && now - t.finished_at < 5000))
-            : true
-        );
+        const visible = downloadDetailsOpen
+          ? tasks
+          : tasks.filter((t: any) =>
+              (t.state === 'done' || t.state === 'error')
+                ? (hasActive || (t.finished_at && now - t.finished_at < 5000))
+                : true
+            );
         setDownloadTasks(visible);
       } catch (e) {
         // backend offline
       }
     };
     poll();
-    const interval = setInterval(poll, 1000);
+    const interval = setInterval(poll, 500);
     return () => { cancelled = true; clearInterval(interval); };
-  }, []);
+  }, [downloadRefreshToken, downloadDetailsOpen]);
 
   // Проверка обновлений
   useEffect(() => {
@@ -1092,21 +1102,53 @@ type SortField = 'default' | 'index' | 'title' | 'addedAt' | 'durationMs';
 
   const downloadSingleTrack = async (track: Track) => {
     setDownloadPanelOpen(true);
+    setDownloadRefreshToken((value) => value + 1);
+
     try {
-      let ytid = (track as any).youtubeId;
-      if (!ytid && !track.url) {
-        const res = await fetch(`http://127.0.0.1:8000/search?q=${encodeURIComponent(track.artist + ' ' + track.title)}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.results && data.results.length > 0) {
-            ytid = data.results[0].id;
-          }
+      const rawUrl = (track.url || '').trim();
+      const lowerUrl = rawUrl.toLowerCase();
+
+      // Browser-uploaded files have blob: URLs that yt-dlp cannot access. Save them
+      // directly from the browser instead of turning blob:http://... into a YouTube URL.
+      if (track.file) {
+        const objectUrl = lowerUrl.startsWith('blob:')
+          ? rawUrl
+          : URL.createObjectURL(track.file);
+        const shouldRevoke = !lowerUrl.startsWith('blob:');
+        const a = document.createElement('a');
+        a.href = objectUrl;
+        a.download = `${track.title || 'Track'} - ${track.artist || 'Artist'}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        if (shouldRevoke) setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+        return;
+      }
+
+      let ytid = track.youtubeId?.trim();
+      if (!ytid && lowerUrl.includes('/proxy_stream?')) {
+        try {
+          ytid = new URL(rawUrl).searchParams.get('id') || undefined;
+        } catch {
+          // Fall back to a metadata search below.
         }
       }
 
       const params = new URLSearchParams();
-      if (ytid) params.append('id', ytid);
-      if (track.url) params.append('url', track.url);
+      if (ytid) {
+        // A stored stream/blob URL may be stale. The stable YouTube ID is preferred.
+        params.append('id', ytid);
+      } else if (
+        /^https?:\/\//i.test(rawUrl) &&
+        !lowerUrl.startsWith('blob:') &&
+        !lowerUrl.includes('localhost:3000') &&
+        !lowerUrl.includes('127.0.0.1:8000/proxy_stream')
+      ) {
+        params.append('url', rawUrl);
+      } else {
+        // Spotify tracks and stale browser URLs need a fresh YouTube match.
+        params.append('url', `ytsearch1:${track.artist || ''} ${track.title || ''}`.trim());
+      }
       params.append('title', track.title || 'Track');
       params.append('artist', track.artist || 'Artist');
 
@@ -1130,13 +1172,50 @@ type SortField = 'default' | 'index' | 'title' | 'addedAt' | 'durationMs';
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        URL.revokeObjectURL(blobUrl);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 0);
       }
     } catch (err: any) {
+      // The downloads panel already shows the backend task error. Avoid alert(),
+      // which blocks rendering and makes bulk progress appear only after a failure.
       console.error('Track download error:', err);
-      const msg = err?.message || '';
-      alert(msg ? `Не удалось скачать трек: ${msg}` : 'Ошибка при скачивании трека.');
+    } finally {
+      setDownloadPendingCount((value) => Math.max(0, value - 1));
     }
+  };
+  const processDownloadQueue = async () => {
+    if (downloadWorkerRunningRef.current) return;
+    downloadWorkerRunningRef.current = true;
+
+    try {
+      while (downloadQueueRef.current.length > 0) {
+        const nextTrack = downloadQueueRef.current.shift();
+        if (!nextTrack) continue;
+        setDownloadQueueTracks((queue) => {
+          const index = queue.findIndex((track) => track.id === nextTrack.id);
+          if (index < 0) return queue;
+          return [...queue.slice(0, index), ...queue.slice(index + 1)];
+        });
+        setDownloadCurrentTrack(nextTrack);
+        try {
+          await downloadSingleTrack(nextTrack);
+        } finally {
+          setDownloadCurrentTrack((current) => current?.id === nextTrack.id ? null : current);
+        }
+      }
+    } finally {
+      downloadWorkerRunningRef.current = false;
+      if (downloadQueueRef.current.length > 0) void processDownloadQueue();
+    }
+  };
+
+  const enqueueDownloads = (tracks: Track[]) => {
+    if (tracks.length === 0) return;
+    setDownloadPanelOpen(true);
+    setDownloadTotalCount((value) => value + tracks.length);
+    setDownloadPendingCount((value) => value + tracks.length);
+    setDownloadQueueTracks((queue) => [...queue, ...tracks]);
+    downloadQueueRef.current.push(...tracks);
+    void processDownloadQueue();
   };
 
   const currentPlayingPlaylist = getPlaylistById(currentPlayingPlaylistId);
@@ -4028,7 +4107,7 @@ const handleNext = () => {
                 const tracksToDownload = (selectedTrackIds.size > 0 && activePl)
                   ? activePl.tracks.filter(t => selectedTrackIds.has(t.id))
                   : [trackContextMenu.track];
-                tracksToDownload.forEach(t => downloadSingleTrack(t));
+                enqueueDownloads(tracksToDownload);
                 setTrackContextMenu(null);
                 setIsPlaylistSubmenuOpen(false);
               }}
@@ -4136,7 +4215,7 @@ const handleNext = () => {
             onClick={() => {
               const activePl = playlists.find(p => p.id === activePlaylistId);
               const tracksToDownload = activePl ? activePl.tracks.filter(t => selectedTrackIds.has(t.id)) : [];
-              tracksToDownload.forEach(t => downloadSingleTrack(t));
+              enqueueDownloads(tracksToDownload);
               setSelectedTrackIds(new Set());
               setIsSelectionMode(false);
             }}
@@ -4168,11 +4247,28 @@ const handleNext = () => {
         </div>
       )}
 
-      {/* Downloads Panel (above player) */}
-      {downloadPanelOpen && (
-        <DownloadsPanel tasks={downloadTasks} onClose={() => setDownloadPanelOpen(false)} />
+      {downloadDetailsOpen && (
+        <DownloadsDetailsPage
+          tasks={downloadTasks}
+          pendingCount={downloadPendingCount}
+          totalCount={downloadTotalCount}
+          currentTrack={downloadCurrentTrack}
+          queuedTracks={downloadQueueTracks}
+          onBack={() => setDownloadDetailsOpen(false)}
+        />
       )}
 
+      {/* Downloads Panel (above player) */}
+      {downloadPanelOpen && (
+        <DownloadsPanel
+          tasks={downloadTasks}
+          pendingCount={downloadPendingCount}
+          totalCount={downloadTotalCount}
+          currentTrack={downloadCurrentTrack}
+          onOpenPage={() => setDownloadDetailsOpen(true)}
+          onClose={() => setDownloadPanelOpen(false)}
+        />
+      )}
       {/* Player */}
       <div
         className={`${isSimplifiedPlayer ? 'h-16' : 'h-24'} px-4 flex items-center justify-between relative z-50 shrink-0 player-container transition-all duration-300 ease-in-out transform ${isPlayerHidden

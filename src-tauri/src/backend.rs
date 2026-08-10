@@ -5,7 +5,6 @@
  * @see {@link ../LICENSE} for full terms and commercial requirement (10% gross royalty).
  * Commercial contact: Telegram @ttfotg | tasmuhambetovtair@gmail.com
  */
-
 use axum::{
     body::Body,
     extract::{Path as AxumPath, Query, State},
@@ -35,6 +34,7 @@ use tokio::{
     io::{AsyncBufReadExt, BufReader},
     net::TcpListener,
     process::Command,
+    sync::Semaphore,
     time::timeout,
 };
 use tokio_util::io::ReaderStream;
@@ -70,6 +70,7 @@ struct BackendInner {
     stream_url_cache: Mutex<HashMap<String, String>>,
     downloads: Mutex<HashMap<String, DownloadTask>>,
     next_task_id: std::sync::atomic::AtomicU64,
+    download_slots: Semaphore,
     http: Client,
     yt_dlp: YtDlpRunner,
 }
@@ -226,6 +227,9 @@ impl BackendState {
                 stream_url_cache: Mutex::new(HashMap::new()),
                 downloads: Mutex::new(HashMap::new()),
                 next_task_id: std::sync::atomic::AtomicU64::new(0),
+                // yt-dlp/ffmpeg downloads share the same output directory. Keeping
+                // one active job prevents Windows file/ffmpeg races during bulk downloads.
+                download_slots: Semaphore::new(1),
                 http,
             }),
         };
@@ -294,8 +298,7 @@ impl BackendState {
     }
 
     fn download_tasks(&self) -> Vec<DownloadTask> {
-        let mut tasks: Vec<DownloadTask> =
-            self.inner.downloads.lock().values().cloned().collect();
+        let mut tasks: Vec<DownloadTask> = self.inner.downloads.lock().values().cloned().collect();
         tasks.sort_by_key(|t| t.created_at);
         tasks
     }
@@ -770,12 +773,17 @@ async fn download_audio(
     State(state): State<BackendState>,
     Query(query): Query<DownloadQuery>,
 ) -> Result<Json<Value>, ApiError> {
-    let input = query
+    let requested_input = query
         .id
         .clone()
         .filter(|s| !s.trim().is_empty())
         .or_else(|| query.url.clone().filter(|s| !s.trim().is_empty()))
         .ok_or_else(|| ApiError::bad_request("Missing id or url parameter"))?;
+    let input = normalize_download_input(
+        &requested_input,
+        query.title.as_deref(),
+        query.artist.as_deref(),
+    )?;
 
     let task_id = state.next_download_id();
     let placeholder = match (&query.title, &query.artist) {
@@ -785,6 +793,13 @@ async fn download_audio(
         _ => "Подготовка...".to_string(),
     };
     state.register_download(task_id.clone(), placeholder);
+
+    let _download_slot = state
+        .inner
+        .download_slots
+        .acquire()
+        .await
+        .map_err(|_| ApiError::internal("Download queue is unavailable"))?;
 
     let result: Result<(String, String, String), ApiError> = async {
         let info = ytdlp_info(&state, &input).await?;
@@ -838,6 +853,7 @@ async fn download_audio(
                 }
             }
             if let Some(err) = last_err {
+                cleanup_partial_download(&state, &format!(".tesify-{task_id}")).await;
                 return Err(err);
             }
         }
@@ -883,6 +899,51 @@ fn now_ms() -> i64 {
     Utc::now().timestamp_millis()
 }
 
+async fn finalize_named_audio(
+    state: &BackendState,
+    target_name: &str,
+    temp_stem: &str,
+) -> Result<(), ApiError> {
+    let dir = state.download_dir();
+    let expected = format!("{target_name}.mp3");
+    let expected_path = dir.join(&expected);
+    if expected_path.exists() {
+        return Ok(());
+    }
+
+    let mut entries = fs::read_dir(&dir)
+        .await
+        .map_err(|e| ApiError::internal(format!("Cannot read downloads directory: {e}")))?;
+    while let Some(entry) = entries
+        .next_entry()
+        .await
+        .map_err(|e| ApiError::internal(format!("Cannot read downloads entry: {e}")))?
+    {
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+        let stem = name
+            .rsplit_once('.')
+            .map(|(stem, _)| stem.to_string())
+            .unwrap_or_else(|| name.clone());
+        if stem != temp_stem || name.ends_with(".part") {
+            continue;
+        }
+
+        if fs::rename(&path, &expected_path).await.is_err() {
+            fs::copy(&path, &expected_path)
+                .await
+                .map_err(|e| ApiError::internal(format!("Cannot finalize downloaded audio: {e}")))?;
+            let _ = fs::remove_file(&path).await;
+        }
+        if expected_path.exists() {
+            return Ok(());
+        }
+    }
+
+    Err(ApiError::internal(
+        "yt-dlp finished but the converted audio file was not created",
+    ))
+}
 async fn ensure_named_audio(state: &BackendState, target_name: &str) -> Result<(), ApiError> {
     let dir = state.download_dir();
     let expected = format!("{target_name}.mp3");
@@ -912,6 +973,22 @@ async fn ensure_named_audio(state: &BackendState, target_name: &str) -> Result<(
     Ok(())
 }
 
+async fn cleanup_partial_download(state: &BackendState, target_name: &str) {
+    let dir = state.download_dir();
+    let prefix = format!("{target_name}.");
+    let mut entries = match fs::read_dir(&dir).await {
+        Ok(entries) => entries,
+        Err(_) => return,
+    };
+
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let filename = entry.file_name().to_string_lossy().to_string();
+        if filename.starts_with(&prefix) && filename.ends_with(".part") {
+            let _ = fs::remove_file(entry.path()).await;
+        }
+    }
+}
+
 fn build_download_name(title: &str, artist: &str) -> String {
     let safe_title = sanitize_filename(title);
     let safe_artist = sanitize_filename(artist);
@@ -926,18 +1003,65 @@ fn build_download_name(title: &str, artist: &str) -> String {
         safe_artist
     };
     format!("{safe_title} - {safe_artist}")
-}
-
-fn sanitize_filename(name: &str) -> String {
-    name.chars()
-        .filter(|c| !matches!(c, '\\' | '/' | '*' | '?' | '"' | '<' | '>' | '|' | ':'))
+        .chars()
+        .take(160)
         .collect::<String>()
-        .trim()
         .trim_end_matches('.')
         .trim()
         .to_string()
 }
 
+fn sanitize_filename(name: &str) -> String {
+    name.chars()
+        .filter(|c| {
+            !c.is_control() && !matches!(c, '\\' | '/' | '*' | '?' | '"' | '<' | '>' | '|' | ':')
+        })
+        .collect::<String>()
+        .trim()
+        .trim_end_matches('.')
+        .trim()
+        .chars()
+        .take(120)
+        .collect::<String>()
+        .trim_end_matches('.')
+        .trim()
+        .to_string()
+}
+
+fn normalize_download_input(
+    input: &str,
+    title: Option<&str>,
+    artist: Option<&str>,
+) -> Result<String, ApiError> {
+    let trimmed = input.trim();
+    if !is_browser_only_input(trimmed) {
+        return Ok(trimmed.to_string());
+    }
+
+    let search_terms = [
+        title.unwrap_or_default().trim(),
+        artist.unwrap_or_default().trim(),
+    ]
+    .into_iter()
+    .filter(|part| !part.is_empty())
+    .collect::<Vec<_>>()
+    .join(" ");
+    if search_terms.is_empty() {
+        return Err(ApiError::bad_request(
+            "Cannot download a browser-only URL without track metadata",
+        ));
+    }
+
+    Ok(format!("ytsearch1:{search_terms}"))
+}
+
+fn is_browser_only_input(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    lower.starts_with("blob:")
+        || lower.starts_with("data:")
+        || lower.contains("localhost:3000")
+        || lower.contains("127.0.0.1:8000/proxy_stream")
+}
 fn first_entry_or_self(value: &Value) -> &Value {
     value
         .get("entries")
@@ -1349,9 +1473,9 @@ async fn download_audio_named(
     task_id: &str,
 ) -> Result<(), ApiError> {
     let input = normalize_media_input(input);
-    let outtmpl = state
-        .download_dir()
-        .join(format!("{target_name}.%(ext)s"));
+    // Keep yt-dlp output path short and Windows-safe; rename it after conversion.
+    let temp_stem = format!(".tesify-{task_id}");
+    let outtmpl = state.download_dir().join(format!("{temp_stem}.%(ext)s"));
     let outtmpl = outtmpl.to_string_lossy().to_string();
 
     let mut cmd = make_ytdlp_command(&state.inner.yt_dlp);
@@ -1378,12 +1502,14 @@ async fn download_audio_named(
         .spawn()
         .map_err(|e| ApiError::internal(format!("yt-dlp failed to start: {e}")))?;
 
-    let stdout = child.stdout.take().ok_or_else(|| {
-        ApiError::internal("Cannot capture yt-dlp stdout for progress reporting")
-    })?;
-    let stderr = child.stderr.take().ok_or_else(|| {
-        ApiError::internal("Cannot capture yt-dlp stderr for progress reporting")
-    })?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| ApiError::internal("Cannot capture yt-dlp stdout for progress reporting"))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| ApiError::internal("Cannot capture yt-dlp stderr for progress reporting"))?;
 
     let captured: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
 
@@ -1459,6 +1585,8 @@ async fn download_audio_named(
         };
         return Err(ApiError::internal(format!("yt-dlp error: {details}")));
     }
+
+    finalize_named_audio(state, target_name, &temp_stem).await?;
 
     Ok(())
 }
