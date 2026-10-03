@@ -109,6 +109,17 @@
 .light-theme-wrapper .text-zinc-500 {
   color: #71717a !important;
 }
+
+/* Telegram download dialogs stay readable on the dark modal surface in light theme. */
+.light-theme-wrapper .telegram-download-modal {
+  color: #ffffff !important;
+}
+.light-theme-wrapper .telegram-download-modal .text-zinc-400 {
+  color: #a1a1aa !important;
+}
+.light-theme-wrapper .telegram-download-modal .text-zinc-500 {
+  color: #71717a !important;
+}
 .light-theme-wrapper .border-white\/10 {
   border-color: rgba(0, 0, 0, 0.1) !important;
 }
@@ -146,6 +157,40 @@
 }
 .light-theme-wrapper .slider-thumb {
   background-color: #000000 !important;
+}
+
+.lyric-word {
+  white-space: pre-wrap;
+  transition: color 90ms linear;
+}
+.lyric-word.lyric-word-sung {
+  color: #ffffff !important;
+}
+.lyric-word.lyric-word-pending {
+  color: rgba(255, 255, 255, 0.4) !important;
+}
+.lyric-word.lyric-word-letters,
+.lyric-word.lyric-word-progress {
+  color: #ffffff !important;
+  /* The audio clock controls opacity directly, including pauses and seeks. */
+  transition: none;
+}
+.lyric-line-in-pause {
+  opacity: 0 !important;
+  transform: translateY(-1.5rem) scale(0.95) !important;
+  transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1), opacity 200ms ease !important;
+}
+.lyrics-close-button { color: #ffffff !important; }
+.lyric-countdown {
+  opacity: 1;
+  transition: opacity 200ms ease;
+}
+@starting-style {
+  .lyric-countdown { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lyric-word { transition: none; }
+  .lyric-line-in-pause { transform: none !important; transition: opacity 150ms ease !important; }
 }
 
 /* Hide player on short screens */

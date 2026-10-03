@@ -6,45 +6,23 @@
  * Commercial contact: Telegram @ttfotg | tasmuhambetovtair@gmail.com
  */
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
-import { Home, Search, Library as LibraryIcon, Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Mic, Plus, Music, X, Loader2, Maximize2, Minimize2, Youtube, Menu, PenSquare, Trash2, ArrowLeft, Heart, Check, User as UserIcon, Clock, Settings as SettingsIcon, BarChart2, RefreshCw, MessageSquare, Edit2, Languages, Link as LinkIcon, Download, AlignLeft, AlignCenter, AlignRight, Radio, ListMusic, ChevronRight, CheckSquare } from 'lucide-react';
+import { Home, Search, Library as LibraryIcon, Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Mic, Plus, Music, X, Loader2, Maximize2, Minimize2, Youtube, Menu, PenSquare, Trash2, ArrowLeft, Heart, Check, User as UserIcon, Clock, Settings as SettingsIcon, BarChart2, RefreshCw, MessageSquare, Edit2, Languages, Link as LinkIcon, Download, Send, AlignLeft, AlignCenter, AlignRight, Radio, ListMusic, ChevronRight, CheckSquare } from 'lucide-react';
 import { Track, Tab, Playlist, UserStats, Comment, SearchSource, SearchResultItem } from './types';
 import { fetchSpotifyData } from './services/spotify';
+import { fetchLyrics, getLyricWordProgress, type LyricLine, type LyricsProvider, type LyricsHighlight } from './services/lyrics';
+import TimedLyricWord from './components/TimedLyricWord';
+import LyricsCountdown from './components/LyricsCountdown';
+import { buildLyricTimeline, getLyricPlaybackState, getLyricSeekTime, getNextLyricWordTimes } from './services/lyricsTiming';
+import { createAudioPlaybackController, resolvePlayableTrack } from './services/playback';
 import AuthScreen from './components/AuthScreen';
 import SpotifySearchResults from './components/SpotifySearchResults';
 import DownloadsPanel, { DownloadTaskUI, DownloadsDetailsPage } from './components/DownloadsPanel';
 import { auth, db } from './services/firebase';
 import { onAuthStateChanged, signOut, updatePassword, updateProfile, deleteUser, EmailAuthProvider, reauthenticateWithCredential, linkWithPopup, GoogleAuthProvider, type User } from 'firebase/auth';
 import { ref, get, set, onValue, push, remove, update } from 'firebase/database';
-
-interface LyricLine {
-  time: number;
-  text: string;
-}
-
-function parseLrc(lrc: string): LyricLine[] {
-  const lines = lrc.split('\n');
-  const result: LyricLine[] = [];
-  const timeRegex = /\[(\d{2}):(\d{2})\.(\d{2,3})\]/;
-
-  for (const line of lines) {
-    const match = timeRegex.exec(line);
-    if (match) {
-      const minutes = parseInt(match[1], 10);
-      const seconds = parseInt(match[2], 10);
-      const milliseconds = parseInt(match[3], 10);
-      const msMultiplier = match[3].length === 2 ? 10 : 1;
-      const time = minutes * 60 + seconds + (milliseconds * msMultiplier) / 1000;
-      const text = line.replace(timeRegex, '').trim();
-      if (text) {
-        result.push({ time, text });
-      }
-    }
-  }
-  return result;
-}
 
 const uploadToImgBB = async (file: File): Promise<string | null> => {
   const formData = new FormData();
@@ -62,9 +40,14 @@ const uploadToImgBB = async (file: File): Promise<string | null> => {
   }
 };
 
-const APP_VERSION = "1.2.2";
+const APP_VERSION = "1.2.3";
+const RELEASES_URL = 'https://github.com/TairTasNis/TesifyRust/releases/latest';
+let latestReleaseRequest: Promise<any> | undefined;
+const getLatestRelease = () => latestReleaseRequest ??= fetch('https://api.github.com/repos/TairTasNis/TesifyRust/releases?per_page=5')
+  .then(async response => response.ok ? (await response.json()).find((release: any) => !release.draft && !release.prerelease) || null : null)
+  .catch(() => null);
 
-const TrackPageView = ({ track, currentUser, context, onBack, onOpenComments, playlists, setPlaylists, onListenNow }: { track: Track, currentUser: User | null, context: string, onBack: () => void, onOpenComments: () => void, playlists: Playlist[], setPlaylists: React.Dispatch<React.SetStateAction<Playlist[]>>, onListenNow: (track: Track) => void }) => {
+const TrackPageView = ({ track, currentUser, context, onBack, onOpenComments, playlists, setPlaylists, onListenNow, lyricsProvider }: { track: Track, currentUser: User | null, context: string, onBack: () => void, onOpenComments: () => void, playlists: Playlist[], setPlaylists: React.Dispatch<React.SetStateAction<Playlist[]>>, onListenNow: (track: Track) => void, lyricsProvider: LyricsProvider }) => {
   const [likes, setLikes] = useState<number>(0);
   const [isLiked, setIsLiked] = useState<boolean>(false);
   const [comments, setComments] = useState<Comment[]>([]);
@@ -108,34 +91,28 @@ const TrackPageView = ({ track, currentUser, context, onBack, onOpenComments, pl
   };
 
   useEffect(() => {
-    let isMounted = true;
-    const fetchLyrics = async () => {
+    const controller = new AbortController();
+    setLyrics(null);
+    setTranslatedLyrics(null);
+    const loadLyrics = async () => {
       setLoadingLyrics(true);
       try {
-        const res = await fetch(`https://lrclib.net/api/get?track_name=${encodeURIComponent(track.title)}&artist_name=${encodeURIComponent(track.artist)}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (isMounted) {
-            setTranslatedLyrics(null);
-            setLyrics(data.syncedLyrics || data.plainLyrics || null);
-          }
-        } else {
-          if (isMounted) setLyrics(null);
-        }
+        const data = await fetchLyrics(track, lyricsProvider, controller.signal);
+        if (!controller.signal.aborted) setLyrics(data?.plain || null);
       } catch (err) {
-        if (isMounted) setLyrics(null);
+        if (!controller.signal.aborted) setLyrics(null);
       } finally {
-        if (isMounted) setLoadingLyrics(false);
+        if (!controller.signal.aborted) setLoadingLyrics(false);
       }
     };
-    if (track.title && track.artist) {
-      fetchLyrics();
+    if (track.title) {
+      loadLyrics();
     } else {
       setLoadingLyrics(false);
     }
     
-    return () => { isMounted = false; };
-  }, [track.title, track.artist]);
+    return () => controller.abort();
+  }, [track.title, track.artist, lyricsProvider]);
 
   useEffect(() => {
     if (!track.id) return;
@@ -568,6 +545,7 @@ export default function App() {
   const [duration, setDuration] = useState(0);
   const [userStats, setUserStats] = useState<UserStats>({});
   const [isLyricsModalOpen, setIsLyricsModalOpen] = useState(false);
+  const [hasWordTimedLyrics, setHasWordTimedLyrics] = useState(false);
     const [isQueueModalOpen, setIsQueueModalOpen] = useState(false);
     const [userQueue, setUserQueue] = useState<Track[]>([]);
     const [isShuffleQueue, setIsShuffleQueue] = useState(false);
@@ -591,6 +569,23 @@ export default function App() {
   
   const [layoutTheme, setLayoutTheme] = useState<'classic' | 'minimalistic' | 'material3'>(localStorage.getItem('layoutTheme') as 'classic' | 'minimalistic' | 'material3' || 'material3');
   const [lyricsAnimation, setLyricsAnimation] = useState<'classic' | 'apple'>(localStorage.getItem('lyricsAnimation') as 'classic' | 'apple' || 'apple');
+  // Apply the new default pair once, including installations which saved the old defaults.
+  const [lyricsProvider, setLyricsProvider] = useState<LyricsProvider>(() => localStorage.getItem('lyricsDefaultsVersion') === '1' && localStorage.getItem('lyricsProvider') === 'lrclib' ? 'lrclib' : 'lyricsplus');
+  const [lyricsHighlight, setLyricsHighlight] = useState<LyricsHighlight>(() => localStorage.getItem('lyricsDefaultsVersion') === '1' && ['letter', 'syllable'].includes(localStorage.getItem('lyricsHighlight') || '') ? localStorage.getItem('lyricsHighlight') as LyricsHighlight : 'word');
+  const [lyricsDeltaTiming, setLyricsDeltaTiming] = useState(() => localStorage.getItem('lyricsDeltaTiming') === 'true');
+  const [lyricsAppearancePercent, setLyricsAppearancePercent] = useState(() => {
+    const saved = Number(localStorage.getItem('lyricsAppearancePercent'));
+    return Number.isFinite(saved) && saved >= 10 && saved <= 100 ? saved : 50;
+  });
+  useEffect(() => {
+    localStorage.setItem('lyricsDeltaTiming', String(lyricsDeltaTiming));
+    localStorage.setItem('lyricsAppearancePercent', String(lyricsAppearancePercent));
+  }, [lyricsDeltaTiming, lyricsAppearancePercent]);
+  useEffect(() => {
+    localStorage.setItem('lyricsProvider', lyricsProvider);
+    localStorage.setItem('lyricsHighlight', lyricsHighlight);
+    localStorage.setItem('lyricsDefaultsVersion', '1');
+  }, [lyricsProvider, lyricsHighlight]);
   const [md3AutoHideRail, setMd3AutoHideRail] = useState(localStorage.getItem('md3AutoHideRail') !== null ? localStorage.getItem('md3AutoHideRail') === 'true' : false);
   const [md3NavPosition, setMd3NavPosition] = useState(localStorage.getItem('md3NavPosition') || 'top');
   const [md3NavOrientation, setMd3NavOrientation] = useState(localStorage.getItem('md3NavOrientation') || 'auto');
@@ -605,6 +600,8 @@ export default function App() {
   const isSidebarCollapsed = isSidebarCollapsedState || (layoutTheme === 'minimalistic' && minimoConfig.hideSidebar);
   const [isPlayerHidden, setIsPlayerHidden] = useState(false);
   const [isLoadingTrack, setIsLoadingTrack] = useState(false);
+  const [isBufferingAudio, setIsBufferingAudio] = useState(false);
+  const [playbackError, setPlaybackError] = useState<string | null>(null);
 
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -630,6 +627,14 @@ export default function App() {
   const [downloadQueueTracks, setDownloadQueueTracks] = useState<Track[]>([]);
   const [downloadCurrentTrack, setDownloadCurrentTrack] = useState<Track | null>(null);
   const [downloadDetailsOpen, setDownloadDetailsOpen] = useState(false);
+  const [downloadMethodOpen, setDownloadMethodOpen] = useState(false);
+  const [telegramPairingOpen, setTelegramPairingOpen] = useState(false);
+  const [telegramPairingCode, setTelegramPairingCode] = useState('');
+  const [telegramPairingId, setTelegramPairingId] = useState('');
+  const [telegramPairingError, setTelegramPairingError] = useState('');
+  const pendingDeliveryTracksRef = useRef<Track[]>([]);
+  const downloadDeliveryRef = useRef<'disk' | 'telegram'>('disk');
+  const telegramJobRef = useRef<{ pairingId: string; jobId: string; total: number } | null>(null);
   const downloadQueueRef = useRef<Track[]>([]);
   const downloadWorkerRunningRef = useRef(false);
 
@@ -811,6 +816,14 @@ type SortField = 'default' | 'index' | 'title' | 'addedAt' | 'durationMs';
   };
 
   const audioRef = useRef<HTMLAudioElement>(null);
+  const playbackControllerRef = useRef<ReturnType<typeof createAudioPlaybackController> | null>(null);
+  const getPlaybackTime = useCallback(() => playbackControllerRef.current?.getCurrentTime() ?? audioRef.current?.currentTime ?? 0, []);
+  const seekToTime = useCallback((time: number) => {
+    const destination = playbackControllerRef.current?.seek(time);
+    if (destination != null) setCurrentTime(destination);
+  }, []);
+  const trackRequestRef = useRef<AbortController | null>(null);
+  useEffect(() => () => trackRequestRef.current?.abort(), []);
   const preloadedNextTrackIdRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -1011,26 +1024,22 @@ type SortField = 'default' | 'index' | 'title' | 'addedAt' | 'durationMs';
 
   // Проверка обновлений
   useEffect(() => {
+    let cancelled = false;
     const checkUpdate = async () => {
-      try {
-        const res = await fetch('https://api.github.com/repos/TairTasNis/Tesify/releases/latest');
-        if (res.ok) {
-          const data = await res.json();
-          let tag = data.tag_name;
-          if (tag) {
-            // Удаляем букву 'v' из тега (например, 'v1.0.0' -> '1.0.0'), чтобы сравнивать чистые версии
-            const cleanTag = tag.startsWith('v') ? tag.slice(1) : tag;
-            if (cleanTag !== APP_VERSION) {
-              setHasUpdate(true);
-              setLatestVersion(cleanTag);
-            }
-          }
+      const data = await getLatestRelease();
+      if (!cancelled && data?.tag_name) {
+        const cleanTag = data.tag_name.replace(/^v/, '');
+        const latest = cleanTag.split('.').map(Number);
+        const installed = APP_VERSION.split('.').map(Number);
+        const differentPart = latest.findIndex((part: number, index: number) => part !== (installed[index] || 0));
+        if (differentPart >= 0 && latest[differentPart] > (installed[differentPart] || 0)) {
+          setHasUpdate(true);
+          setLatestVersion(cleanTag);
         }
-      } catch (e) {
-        console.error('Failed to check for updates', e);
       }
     };
     checkUpdate();
+    return () => { cancelled = true; };
   }, []);
 
   const handleTrackContextMenu = (e: React.MouseEvent, track: Track, index: number, tracksList: Track[]) => {
@@ -1111,6 +1120,9 @@ type SortField = 'default' | 'index' | 'title' | 'addedAt' | 'durationMs';
       // Browser-uploaded files have blob: URLs that yt-dlp cannot access. Save them
       // directly from the browser instead of turning blob:http://... into a YouTube URL.
       if (track.file) {
+        if (downloadDeliveryRef.current === 'telegram') {
+          throw new Error('Локально импортированные файлы нельзя отправить в Telegram');
+        }
         const objectUrl = lowerUrl.startsWith('blob:')
           ? rawUrl
           : URL.createObjectURL(track.file);
@@ -1162,6 +1174,30 @@ type SortField = 'default' | 'index' | 'title' | 'addedAt' | 'durationMs';
 
       if (dlData.download_url) {
         const filename = dlData.filename || `${track.title} - ${track.artist}.mp3`;
+        if (downloadDeliveryRef.current === 'telegram') {
+          const telegramJob = telegramJobRef.current;
+          if (!telegramJob) throw new Error('Telegram job is not initialized');
+          const sendRes = await fetch('http://127.0.0.1:8000/api/telegram/send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              job_id: telegramJob.jobId,
+              filename,
+              title: track.title || 'Track',
+              artist: track.artist || 'Artist',
+              index: telegramJob.total - downloadQueueRef.current.length,
+            }),
+          });
+          if (!sendRes.ok) throw new Error('Не удалось отправить трек в Telegram');
+          const completed = telegramJob.total - downloadQueueRef.current.length;
+          await fetch('http://127.0.0.1:8000/api/telegram/progress', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ job_id: telegramJob.jobId, completed, total: telegramJob.total, current: track.title, speed: '', eta: '', state: completed >= telegramJob.total ? 'done' : 'uploading' }),
+          });
+          await fetch(`http://127.0.0.1:8000/api/settings/downloads/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+          return;
+        }
         const fileRes = await fetch(dlData.download_url);
         if (!fileRes.ok) throw new Error('File fetch failed');
         const blob = await fileRes.blob();
@@ -1208,8 +1244,9 @@ type SortField = 'default' | 'index' | 'title' | 'addedAt' | 'durationMs';
     }
   };
 
-  const enqueueDownloads = (tracks: Track[]) => {
+  const startDownloadQueue = (tracks: Track[], delivery: 'disk' | 'telegram') => {
     if (tracks.length === 0) return;
+    downloadDeliveryRef.current = delivery;
     setDownloadPanelOpen(true);
     setDownloadTotalCount((value) => value + tracks.length);
     setDownloadPendingCount((value) => value + tracks.length);
@@ -1218,9 +1255,78 @@ type SortField = 'default' | 'index' | 'title' | 'addedAt' | 'durationMs';
     void processDownloadQueue();
   };
 
+  const enqueueDownloads = (tracks: Track[]) => {
+    if (tracks.length === 0) return;
+    pendingDeliveryTracksRef.current = tracks;
+    setDownloadMethodOpen(true);
+  };
+
+  const chooseDiskDownload = () => {
+    const tracks = pendingDeliveryTracksRef.current;
+    pendingDeliveryTracksRef.current = [];
+    setDownloadMethodOpen(false);
+    startDownloadQueue(tracks, 'disk');
+  };
+
+  const chooseTelegramDownload = async () => {
+    const tracks = pendingDeliveryTracksRef.current;
+    if (tracks.length === 0) return;
+    setDownloadMethodOpen(false);
+    setTelegramPairingError('');
+    try {
+      const response = await fetch('http://127.0.0.1:8000/api/telegram/pairing/start', { method: 'POST' });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || 'Telegram gateway unavailable');
+      setTelegramPairingCode(data.code || '');
+      setTelegramPairingId(data.pairing_id || '');
+      setTelegramPairingOpen(true);
+    } catch (error: any) {
+      setTelegramPairingError(error?.message || 'Не удалось подключиться к Telegram');
+      setTelegramPairingOpen(true);
+    }
+  };
+
+  useEffect(() => {
+    if (!telegramPairingOpen || !telegramPairingId) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const response = await fetch(`http://127.0.0.1:8000/api/telegram/pairing/status?pairing_id=${encodeURIComponent(telegramPairingId)}`);
+        const data = await response.json();
+        if (cancelled || data.status !== 'paired') return;
+        const tracks = pendingDeliveryTracksRef.current;
+        const jobResponse = await fetch('http://127.0.0.1:8000/api/telegram/job/start', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pairing_id: telegramPairingId, total: tracks.length }),
+        });
+        const job = await jobResponse.json();
+        if (!jobResponse.ok) throw new Error(job.detail || 'Не удалось создать Telegram-задачу');
+        telegramJobRef.current = { pairingId: telegramPairingId, jobId: job.job_id, total: tracks.length };
+        pendingDeliveryTracksRef.current = [];
+        setTelegramPairingOpen(false);
+        startDownloadQueue(tracks, 'telegram');
+      } catch (error: any) {
+        if (!cancelled) setTelegramPairingError(error?.message || 'Ошибка подключения к Telegram');
+      }
+    };
+    poll();
+    const interval = setInterval(poll, 1500);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [telegramPairingOpen, telegramPairingId]);
+
   const currentPlayingPlaylist = getPlaylistById(currentPlayingPlaylistId);
   const currentTrackBase = currentTrackIndex >= 0 && currentPlayingPlaylist ? currentPlayingPlaylist.tracks[currentTrackIndex] : null;
   const currentTrack = overrideTrack || currentTrackBase;
+  useEffect(() => { setHasWordTimedLyrics(false); }, [currentTrack?.id, currentTrack?.title, currentTrack?.artist, lyricsProvider]);
+  useEffect(() => {
+    if (activeTab !== 'settings' || settingsSection !== 'customization' || !currentTrack) return;
+    const controller = new AbortController();
+    // Check the selected track so the syllable option works before opening the lyric screen.
+    fetchLyrics(currentTrack, lyricsProvider, controller.signal)
+      .then(result => { if (!controller.signal.aborted) setHasWordTimedLyrics(Boolean(result?.lines?.some(line => line.words?.length))); })
+      .catch(() => { if (!controller.signal.aborted) setHasWordTimedLyrics(false); });
+    return () => controller.abort();
+  }, [activeTab, settingsSection, currentTrack?.id, currentTrack?.title, currentTrack?.artist, currentTrack?.durationMs, lyricsProvider]);
 
   const isHost = currentSessionId && syncSession && currentUser && (
       syncSession.hostId === currentUser.uid || 
@@ -1248,7 +1354,7 @@ type SortField = 'default' | 'index' | 'title' | 'addedAt' | 'durationMs';
                // Ensure there is a virtual playlist for the listener
                setPlaylists(prev => {
                   if (!prev.find(p => p.id === `session-${currentSessionId}`)) {
-                     return [...prev, { id: `session-${currentSessionId}`, name: `Сессия ${data.hostName || 'друга'}`, tracks: [data.currentTrack], cover: '' }];
+                     return [...prev, { id: `session-${currentSessionId}`, title: `Сессия ${data.hostName || 'друга'}`, tracks: [data.currentTrack], coverUrl: '' }];
                   } else {
                      return prev.map(p => p.id === `session-${currentSessionId}` ? { ...p, tracks: [data.currentTrack] } : p);
                   }
@@ -1268,10 +1374,9 @@ type SortField = 'default' | 'index' | 'title' | 'addedAt' | 'durationMs';
                // If host is playing and listener hasn't paused locally
                if (data.isPlaying && !isLocalPaused) {
                    if (timeDiff > 2) {
-                       audioRef.current.currentTime = data.currentTime;
+                       seekToTime(data.currentTime || 0);
                    }
                    if (audioRef.current.paused) {
-                       audioRef.current.play().catch(e => console.log('Listener play block:', e));
                        setIsPlaying(true);
                    }
                } 
@@ -1326,22 +1431,23 @@ type SortField = 'default' | 'index' | 'title' | 'addedAt' | 'durationMs';
   }, [currentSessionId, isHost, isPlaying, currentUser]);
 
 
-  // Sync isPlaying state with actual audio element events (OS media keys, keyboard shortcuts, etc.)
+  // Bind after the audio element is mounted; the authentication screen has no audio.
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
-    const onPlay = () => setIsPlaying(true);
-    const onPause = () => {
-      // Don't update if track just ended (handleEnded manages that)
-      if (!audio.ended) setIsPlaying(false);
-    };
-    audio.addEventListener('play', onPlay);
-    audio.addEventListener('pause', onPause);
+    const controller = createAudioPlaybackController(audio, {
+      onPlaying: setIsPlaying,
+      onLoading: setIsBufferingAudio,
+      onError: setPlaybackError,
+      onErrorClear: () => setPlaybackError(null),
+    });
+    playbackControllerRef.current = controller;
+    audio.volume = volume;
     return () => {
-      audio.removeEventListener('play', onPlay);
-      audio.removeEventListener('pause', onPause);
+      controller.dispose();
+      playbackControllerRef.current = null;
     };
-  }, []);
+  }, [currentTrack?.id, isAuthLoading, currentUser?.uid]);
 
   // Media Session API — OS media keys and lock screen controls
   useEffect(() => {
@@ -1360,20 +1466,16 @@ type SortField = 'default' | 'index' | 'title' | 'addedAt' | 'durationMs';
   }, [currentTrack]);
 
   useEffect(() => {
-    if (audioRef.current && currentTrack?.url) {
-      if (isPlaying) {
-        audioRef.current.play().catch(e => console.error("Playback failed", e));
-      } else {
-        audioRef.current.pause();
-      }
-    }
+    const controller = playbackControllerRef.current;
+    controller?.setSource(isLoadingTrack ? '' : currentTrack?.url || '');
+    controller?.setPlaying(isPlaying);
     // reset preloaded when track changes
     if (currentTrack) {
         if (preloadedNextTrackIdRef.current === currentTrack.id) {
             preloadedNextTrackIdRef.current = null;
         }
     }
-  }, [isPlaying, currentTrackIndex, currentTrack?.url]);
+  }, [isPlaying, isLoadingTrack, currentTrack?.id, currentTrack?.url, isAuthLoading, currentUser?.uid]);
 
   useEffect(() => {
     if (audioRef.current) {
@@ -1445,7 +1547,7 @@ type SortField = 'default' | 'index' | 'title' | 'addedAt' | 'durationMs';
 
   const handleTimeUpdate = () => {
     if (audioRef.current) {
-      setCurrentTime(audioRef.current.currentTime);
+      setCurrentTime(getPlaybackTime());
       if (audioRef.current.duration > 0 && audioRef.current.currentTime >= audioRef.current.duration * 0.5) {
         preloadNextTrack();
       }
@@ -1527,7 +1629,7 @@ type SortField = 'default' | 'index' | 'title' | 'addedAt' | 'durationMs';
              setIsLocalPaused(false);
              // Sync back to host time
              if (syncSession && audioRef.current) {
-                audioRef.current.currentTime = syncSession.currentTime || 0;
+                seekToTime(syncSession.currentTime || 0);
              }
          }
       }
@@ -1643,11 +1745,7 @@ const handleNext = () => {
   };
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const time = Number(e.target.value);
-    if (audioRef.current) {
-      audioRef.current.currentTime = time;
-      setCurrentTime(time);
-    }
+    seekToTime(Number(e.target.value));
   };
 
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1704,155 +1802,57 @@ const handleNext = () => {
   }, [playlistContextMenu]);
 
   
-    const playQueueTrack = async (track: Track) => {
-      let updatedTrack = { ...track };
-      if (updatedTrack.youtubeId) updatedTrack.url = "";
-
-      setOverrideTrack(track);
-      setIsPlaying(false);
-      setIsLoadingTrack(true);
-
-      if (!updatedTrack.youtubeId && !updatedTrack.file && !updatedTrack.url) {
-        try {
-          const res = await fetch(`http://127.0.0.1:8000/search?q=${encodeURIComponent(updatedTrack.artist + " " + updatedTrack.title)}`);
-          if (!res.ok) throw new Error("Search failed");
-          const data = await res.json();
-          if (data.results && data.results.length > 0) {
-            updatedTrack.youtubeId = data.results[0].id;
-          } else throw new Error("No results");
-        } catch (err) {
-          console.error(err);
-          setIsLoadingTrack(false);
-          return;
-        }
-      }
-      
-      if (updatedTrack.youtubeId) {
-        try {
-          const modeParam = localStorage.getItem("audioMode") || "stream";
-          if (modeParam === "stream") {
-            updatedTrack.url = `http://127.0.0.1:8000/proxy_stream?id=${updatedTrack.youtubeId}`;
-          } else {
-            const res = await fetch(`http://127.0.0.1:8000/stream?id=${updatedTrack.youtubeId}&mode=${modeParam}`);
-            const data = await res.json();
-            updatedTrack.url = data.url;
-          }
-        } catch (err) {
-          console.error("Error fetching stream URL:", err);
-          setIsLoadingTrack(false);
-          return;
-        }
-      }
-
-      setOverrideTrack(updatedTrack);
-      setIsPlaying(true);
-      setIsLoadingTrack(false);
-    };
-
-    const playTrack = async (index: number, playlistId: string) => {
-    const playlist = getPlaylistById(playlistId);
-    if (!playlist) return;
-
-    let track = playlist.tracks[index];
-    let updatedTrack = { ...track };
-    let needsUpdate = false;
-
-    // Играем трек из плейлиста, сбрасываем очередь-оверрайд, чтобы он заиграл сразу
-    setOverrideTrack(null);
-
-    // Если у трека есть youtubeId, мы в любом случае будем запрашивать свежую ссылку
-    if (updatedTrack.youtubeId) {
-      updatedTrack.url = ''; // Очищаем старую ссылку, чтобы она не начала играть
-    }
-
-    // Сначала устанавливаем выбранный трек (для UI), но ПОКА не запускаем проигрывание
-    setCurrentTrackIndex(index);
-    setCurrentPlayingPlaylistId(playlistId);
+  const prepareTrackPlayback = async (track: Track): Promise<Track | null> => {
+    trackRequestRef.current?.abort();
+    const request = new AbortController();
+    trackRequestRef.current = request;
+    playbackControllerRef.current?.setPlaying(false);
+    playbackControllerRef.current?.setSource('');
+    setPlaybackError(null);
     setIsPlaying(false);
     setIsLoadingTrack(true);
-
-    // Если это трек из Spotify (нет youtubeId, нет файла и нет url)
-    if (!updatedTrack.youtubeId && !updatedTrack.file && !updatedTrack.url) {
-      try {
-        const res = await fetch(`http://127.0.0.1:8000/search?q=${encodeURIComponent(updatedTrack.artist + ' ' + updatedTrack.title)}`);
-        if (!res.ok) throw new Error('Search failed');
-        const data = await res.json();
-        if (data.results && data.results.length > 0) {
-          let bestVideoId = data.results[0].id;
-          
-          // Smart matching by duration if available from Spotify
-          if (updatedTrack.durationMs) {
-            const targetSec = updatedTrack.durationMs / 1000;
-            // Progressively relax precision: exact/very close (+-3s), then close (+-10s), then somewhat ok (+-30s)
-            const tolerances = [3, 10, 30]; 
-            let found = false;
-            
-            for (const tol of tolerances) {
-              for (const r of data.results) {
-                if (typeof r.duration === 'number') {
-                  const diff = Math.abs(r.duration - targetSec);
-                  if (diff <= tol) {
-                    bestVideoId = r.id;
-                    found = true;
-                    // Also attempt to get the best cover, we can leave this out for now
-                    break;
-                  }
-                }
-              }
-              if (found) break; // found a match within this tolerance
-            }
-          }
-          
-          updatedTrack.youtubeId = bestVideoId;
-          needsUpdate = true;
-        } else {
-          throw new Error('No results found on YouTube');
-        }
-      } catch (err) {
-        console.error('Error searching YouTube for Spotify track:', err);
-        alert('Не удалось найти трек на YouTube.');
+    setCurrentTime(0);
+    setDuration((track.durationMs || 0) / 1000);
+    try {
+      const ready = await resolvePlayableTrack(track, audioMode, request.signal);
+      if (request.signal.aborted) return null;
+      return ready;
+    } catch (error: any) {
+      if (!request.signal.aborted) {
+        setOverrideTrack({ ...track, url: '' });
+        setPlaybackError(error?.message || 'Не удалось загрузить трек. Проверьте сервер.');
         setIsLoadingTrack(false);
-        return;
       }
+      return null;
     }
+  };
 
-    // Если это трек с YouTube, всегда запрашиваем свежую ссылку, так как старая могла протухнуть
-    if (updatedTrack.youtubeId) {
-      try {
-        // Получаем прямую ссылку на аудиопоток
-        const modeParam = localStorage.getItem('audioMode') || 'stream';
-        if (modeParam === 'stream') {
-          updatedTrack.url = `http://127.0.0.1:8000/proxy_stream?id=${updatedTrack.youtubeId}`;
-          needsUpdate = true;
-        } else {
-          const res = await fetch(`http://127.0.0.1:8000/stream?id=${updatedTrack.youtubeId}&mode=${modeParam}`);
-          if (!res.ok) throw new Error('Failed to get stream URL');
-          const data = await res.json();
-
-          updatedTrack.url = data.url;
-          needsUpdate = true;
-        }
-      } catch (err) {
-        console.error('Error fetching stream URL:', err);
-        alert('Не удалось запустить трек. Убедитесь, что Python-сервер запущен.');
-        setIsLoadingTrack(false);
-        return;
-      }
-    }
-
-    if (needsUpdate) {
-      const updatePlaylistTrack = (pl: Playlist) => {
-        const newTracks = [...pl.tracks];
-        newTracks[index] = updatedTrack;
-        return { ...pl, tracks: newTracks };
-      };
-
-      setPlaylists(prev => prev.map(pl => pl.id === playlistId ? updatePlaylistTrack(pl) : pl));
-      setSearchPreviewPlaylist(prev => prev?.id === playlistId ? updatePlaylistTrack(prev) : prev);
-    }
-
-    setIsPlaying(true);
+  const playQueueTrack = async (track: Track) => {
+    setOverrideTrack({ ...track, url: '' });
+    const ready = await prepareTrackPlayback(track);
+    if (!ready) return;
+    setOverrideTrack(ready);
     setIsLoadingTrack(false);
+    setIsPlaying(true);
+  };
+
+  const playTrack = async (index: number, playlistId: string) => {
+    const playlist = getPlaylistById(playlistId);
+    const track = playlist?.tracks[index];
+    if (!track) return;
+    setOverrideTrack(null);
+    setCurrentTrackIndex(index);
+    setCurrentPlayingPlaylistId(playlistId);
+    const ready = await prepareTrackPlayback(track);
+    if (!ready) return;
+    const updatePlaylistTrack = (pl: Playlist) => ({
+      ...pl,
+      tracks: pl.tracks.map((item, position) => position === index ? ready : item),
+    });
+    setPlaylists(prev => prev.map(pl => pl.id === playlistId ? updatePlaylistTrack(pl) : pl));
+    setSearchPreviewPlaylist(prev => prev?.id === playlistId ? updatePlaylistTrack(prev) : prev);
+    setIsLoadingTrack(false);
+    setIsPlaying(true);
   };
 
   const formatPlaylistDuration = (tracks: Track[]) => {
@@ -2259,7 +2259,7 @@ const handleNext = () => {
           </div>
           <div className="flex items-center gap-4">
             <button 
-              onClick={() => window.open('https://github.com/TairTasNis/Tesify/releases/latest/download/Tesify.exe', '_blank')}
+              onClick={() => window.open(RELEASES_URL, '_blank')}
               className="bg-black/20 hover:bg-black/30 text-white px-3 py-1 rounded-full text-xs font-bold transition"
             >
               Скачать
@@ -2304,7 +2304,7 @@ const handleNext = () => {
       <div className="flex flex-1 overflow-hidden p-2 gap-2">
         {/* Sidebar */}
         {layoutTheme !== 'material3' && (
-        <div className={`w-16 ${isSidebarCollapsed ? 'md:w-16' : 'md:w-64'} bg-zinc-900 rounded-lg flex flex-col shrink-0 transition-all duration-300`}>
+        <div className={`${isLyricsModalOpen ? '!hidden' : ''} w-16 ${isSidebarCollapsed ? 'md:w-16' : 'md:w-64'} bg-zinc-900 rounded-lg flex flex-col shrink-0 transition-all duration-300`}>
           <div className="p-4 md:px-4 md:py-6 pb-2">
             <div className={`flex items-center mb-8 ${isSidebarCollapsed ? 'justify-center' : 'justify-between md:pl-2'}`}>
               <div className={`items-center gap-2 hidden md:flex ${isSidebarCollapsed ? 'md:hidden' : ''}`}>
@@ -2357,7 +2357,7 @@ const handleNext = () => {
                 <>
                   <button
                     onClick={() => setActiveTab('home')}
-                    className={`flex items-center justify-center md:justify-start gap-4 font-semibold transition-colors w-full px-1 md:px-2 ${layoutTheme === 'material3' ? (activeTab === 'home' ? 'md3-sidebar-active' : 'md3-sidebar-inactive') : (activeTab === 'home' ? 'text-white' : 'text-zinc-400 hover:text-white')}`}
+                    className={`flex items-center justify-center md:justify-start gap-4 font-semibold transition-colors w-full px-1 md:px-2 ${activeTab === 'home' ? 'text-white' : 'text-zinc-400 hover:text-white'}`}
                     title="Главная"
                   >
                     <Home size={24} className="shrink-0 min-w-[24px]" />
@@ -2365,7 +2365,7 @@ const handleNext = () => {
                   </button>
                   <button
                     onClick={() => setActiveTab('search')}
-                    className={`flex items-center justify-center md:justify-start gap-4 font-semibold transition-colors w-full px-1 md:px-2 ${layoutTheme === 'material3' ? (activeTab === 'search' ? 'md3-sidebar-active' : 'md3-sidebar-inactive') : (activeTab === 'search' ? 'text-white' : 'text-zinc-400 hover:text-white')}`}
+                    className={`flex items-center justify-center md:justify-start gap-4 font-semibold transition-colors w-full px-1 md:px-2 ${activeTab === 'search' ? 'text-white' : 'text-zinc-400 hover:text-white'}`}
                     title="Поиск"
                   >
                     <Search size={24} className="shrink-0 min-w-[24px]" />
@@ -2387,7 +2387,7 @@ const handleNext = () => {
                     setIsLibrarySongsVisible(true);
                   }
                 }}
-                className={`flex items-center justify-center md:justify-start gap-2 font-semibold transition-colors px-1 md:px-2 w-full md:w-auto ${layoutTheme === 'material3' ? (activeTab === 'library' ? 'md3-sidebar-active' : 'md3-sidebar-inactive') : (activeTab === 'library' ? 'text-white' : 'text-zinc-400 hover:text-white')}`}
+                className={`flex items-center justify-center md:justify-start gap-2 font-semibold transition-colors px-1 md:px-2 w-full md:w-auto ${activeTab === 'library' ? 'text-white' : 'text-zinc-400 hover:text-white'}`}
                 title="Моя медиатека"
               >
                 <LibraryIcon size={24} className="shrink-0 min-w-[24px]" />
@@ -3190,7 +3190,7 @@ const handleNext = () => {
                           className={`flex items-center gap-4 p-3 rounded-md cursor-pointer group select-none ${selectedTrackIds.has(track.id) ? 'bg-zinc-700/80' : 'hover:bg-white/10'}`}
                         >
                           <div className={`w-8 text-center text-zinc-400 group-hover:hidden ${currentTrackIndex === index && currentPlayingPlaylistId === activePlaylist.id ? 'text-green-500' : ''}`}>
-                            {currentTrackIndex === index && currentPlayingPlaylistId === activePlaylist.id && isLoadingTrack ? (
+                            {currentTrackIndex === index && currentPlayingPlaylistId === activePlaylist.id && (isLoadingTrack || isBufferingAudio) ? (
                               <Loader2 size={16} className="animate-spin mx-auto text-green-500" />
                             ) : currentTrackIndex === index && currentPlayingPlaylistId === activePlaylist.id && isPlaying ? (
                               (!layoutTheme || layoutTheme !== 'minimalistic' || !minimoConfig.hideVisualizer) ? (
@@ -3275,7 +3275,7 @@ const handleNext = () => {
                   transition={{ duration: 0.2 }}
                   className="flex flex-col h-full flex-1"
                 >
-                  <TrackPageView track={viewingTrack} currentUser={currentUser} context={viewingTrackContext} onBack={() => { setActiveTab(previousTab); }} onOpenComments={() => setActiveTab('comments')} playlists={playlists} setPlaylists={setPlaylists} onListenNow={(t) => playQueueTrack(t)} />
+                  <TrackPageView lyricsProvider={lyricsProvider} track={viewingTrack} currentUser={currentUser} context={viewingTrackContext} onBack={() => { setActiveTab(previousTab); }} onOpenComments={() => setActiveTab('comments')} playlists={playlists} setPlaylists={setPlaylists} onListenNow={(t) => playQueueTrack(t)} />
                 </motion.div>
               )}
               {activeTab === 'comments' && viewingTrack && (
@@ -3582,6 +3582,41 @@ const handleNext = () => {
 
                         <div className="pt-4 border-t border-white/10">
                           <h3 className="text-lg font-bold mb-3">Вид текста песен</h3>
+                          <div className="flex flex-col gap-2 mb-4">
+                            <label htmlFor="lyrics-provider" className="text-sm text-zinc-400">Провайдер текста:</label>
+                            <select id="lyrics-provider" value={lyricsProvider} onChange={e => setLyricsProvider(e.target.value as LyricsProvider)} className="bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm w-full md:w-1/2 outline-none focus:border-green-500 transition-colors">
+                              <option value="lyricsplus">LyricsPlus</option>
+                              <option value="lrclib">LRCLIB</option>
+                            </select>
+                            <p className="text-xs text-zinc-400">LyricsPlus поддерживает подсветку по словам и по буквам. Если текст не найден или получена только одна строка, для этого трека автоматически используется LRCLIB.</p>
+                          </div>
+                          <div className="flex flex-col gap-2 mb-4">
+                            <label htmlFor="lyrics-highlight" className="text-sm text-zinc-400">Подсветка текста:</label>
+                            <select id="lyrics-highlight" value={lyricsHighlight} onChange={e => setLyricsHighlight(e.target.value as LyricsHighlight)} className="bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm w-full md:w-1/2 outline-none focus:border-green-500 transition-colors">
+                              <option value="word">По словам</option>
+                              <option value="letter">По буквам</option>
+                              <option value="syllable" disabled={!hasWordTimedLyrics}>По слогам</option>
+                            </select>
+                            <p className="text-xs text-zinc-400">Слоги рассчитываются по гласным и времени слова. Режим «По слогам» доступен после загрузки текста с таймингами слов. Если есть только тайминги строк, подсвечивается строка целиком.</p>
+                          </div>
+                          <div className="flex flex-col gap-3 mb-4">
+                            <label htmlFor="lyrics-delta-timing" className="flex items-center gap-3 cursor-pointer text-sm">
+                              <input id="lyrics-delta-timing" type="checkbox" checked={lyricsDeltaTiming} onChange={e => setLyricsDeltaTiming(e.target.checked)} aria-describedby="lyrics-delta-description" className="w-4 h-4 accent-green-500" />
+                              <span>Учитывать время до следующего слова</span>
+                            </label>
+                            <p id="lyrics-delta-description" className="text-xs text-zinc-400">Если до следующего слова далеко, текст появляется плавно; если близко — быстрее. Работает для слов, букв и слогов.</p>
+                            {lyricsDeltaTiming && (
+                              <div className="flex flex-col gap-2 w-full md:w-1/2">
+                                <div className="flex items-center justify-between gap-3">
+                                  <label htmlFor="lyrics-appearance-percent" className="text-sm text-zinc-400">Длительность появления</label>
+                                  <output htmlFor="lyrics-appearance-percent" className="text-sm text-white tabular-nums">{lyricsAppearancePercent}%</output>
+                                </div>
+                                <input id="lyrics-appearance-percent" type="range" min="10" max="100" step="5" value={lyricsAppearancePercent} onChange={e => setLyricsAppearancePercent(Number(e.target.value))} aria-describedby="lyrics-appearance-description" aria-valuetext={`${lyricsAppearancePercent}% времени появления`} className="w-full accent-green-500 cursor-pointer" />
+                                <div className="flex justify-between text-xs text-zinc-400"><span>Быстрее</span><span>Медленнее</span></div>
+                                <p id="lyrics-appearance-description" className="text-xs text-zinc-400">Большее значение отводит больше времени на появление текста.</p>
+                              </div>
+                            )}
+                          </div>
                           <div className="flex flex-col gap-2">
                             <span className="text-sm text-zinc-400">Анимация текста:</span>
                             <select value={lyricsAnimation} onChange={e => setLyricsAnimation(e.target.value as any)} className="bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm w-full md:w-1/2 outline-none focus:border-green-500 transition-colors">
@@ -3932,7 +3967,7 @@ const handleNext = () => {
               key={md3NavKey}
               drag={isDraggable}
               dragMomentum={false}
-              className={`group flex shrink-0 shadow-2xl absolute z-[100] bg-[var(--md-sys-color-surface-variant)] transition-all duration-300 ease-in-out ${autoHideOpacity} ${dimensionClasses} ${positionClasses} ${isDraggable ? '!transition-none cursor-grab active:cursor-grabbing' : ''}`}
+              className={`${isLyricsModalOpen ? '!hidden' : ''} group flex shrink-0 shadow-2xl absolute z-[100] bg-[var(--md-sys-color-surface-variant)] transition-all duration-300 ease-in-out ${autoHideOpacity} ${dimensionClasses} ${positionClasses} ${isDraggable ? '!transition-none cursor-grab active:cursor-grabbing' : ''}`}
             >
               <button onPointerDown={(e) => isDraggable && e.stopPropagation()} onClick={() => setActiveTab('home')} title="Главная" className="relative group p-3 rounded-full flex items-center justify-center w-12 h-12 shrink-0">
                 {activeTab === 'home' && <motion.div layoutId="md3RightNavTab" className="absolute inset-0 bg-[var(--md-sys-color-secondary-container)] rounded-[20px] z-0" transition={{ type: "spring", stiffness: 300, damping: 30 }} />}
@@ -4343,7 +4378,7 @@ const handleNext = () => {
                 className={`h-10 rounded-full flex items-center justify-center transition-all duration-300 ${isPlaying ? 'bg-white/10 text-white w-20 hover:bg-white/20' : 'bg-white text-black w-24 hover:scale-105'}`}
                 disabled={!currentPlayingPlaylist || currentPlayingPlaylist.tracks.length === 0}
               >
-                {isLoadingTrack ? (
+                {isLoadingTrack || isBufferingAudio ? (
                   <Loader2 size={20} className="animate-spin" />
                 ) : isPlaying ? (
                   <Pause size={20} fill="currentColor" />
@@ -4357,7 +4392,7 @@ const handleNext = () => {
                 className="w-8 h-8 rounded-full bg-white text-black flex items-center justify-center hover:scale-105 transition-transform"
                 disabled={!currentPlayingPlaylist || currentPlayingPlaylist.tracks.length === 0}
               >
-                {isLoadingTrack ? (
+                {isLoadingTrack || isBufferingAudio ? (
                   <Loader2 size={16} className="animate-spin" />
                 ) : isPlaying ? (
                   <Pause size={16} fill="currentColor" />
@@ -4458,25 +4493,16 @@ const handleNext = () => {
 
       <audio
         ref={audioRef}
-        src={currentTrack?.url || undefined}
         onTimeUpdate={handleTimeUpdate}
         onLoadedMetadata={handleLoadedMetadata}
         onEnded={handleEnded}
-        onError={(e) => {
-          console.error("Audio playback error:", e);
-          if (audioRef.current && currentTrack?.url?.includes('proxy_stream')) {
-            // Add a retry timestamp to bypass browser cache and force a new request
-            if (!currentTrack.url.includes('&retry=')) {
-               const newUrl = `${currentTrack.url}&retry=${Date.now()}`;
-               audioRef.current.src = newUrl;
-               audioRef.current.load();
-               if (isPlaying) {
-                 audioRef.current.play().catch(e => console.error("Retry play failed", e));
-               }
-            }
-          }
-        }}
       />
+      {playbackError && (
+        <div role="alert" className="fixed bottom-28 left-1/2 -translate-x-1/2 z-[130] max-w-lg w-[calc(100%-2rem)] rounded-xl bg-zinc-900 border border-rose-400/30 p-4 shadow-xl flex items-start gap-3 text-sm text-rose-300">
+          <span className="flex-1">{playbackError}</span>
+          <button onClick={() => setPlaybackError(null)} aria-label="Закрыть сообщение" className="shrink-0"><X size={18} /></button>
+        </div>
+      )}
     </div>
 
       {/* Lyrics Modal */}
@@ -4488,12 +4514,15 @@ const handleNext = () => {
         }}
         currentTrack={currentTrack}
         currentTime={currentTime}
-        onSeek={(time) => {
-          if (audioRef.current) {
-            audioRef.current.currentTime = time;
-            setCurrentTime(time);
-          }
-        }}
+        audioRef={audioRef}
+        getPlaybackTime={getPlaybackTime}
+        isPlaying={isPlaying}
+        lyricsProvider={lyricsProvider}
+        lyricsHighlight={lyricsHighlight}
+        lyricsDeltaTiming={lyricsDeltaTiming}
+        lyricsAppearancePercent={lyricsAppearancePercent}
+        onWordTimingAvailableChange={setHasWordTimedLyrics}
+        onSeek={seekToTime}
         isPlayerHidden={isPlayerHidden}
         onTogglePlayer={() => setIsPlayerHidden(!isPlayerHidden)}
         lyricsAnimation={lyricsAnimation}
@@ -4526,6 +4555,46 @@ const handleNext = () => {
           setActiveTab('library');
         }}
       />
+
+      {downloadMethodOpen && (
+        <div className="fixed inset-0 z-[120] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="telegram-download-modal w-full max-w-md rounded-2xl bg-zinc-900 border border-white/10 shadow-2xl p-6 text-white">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-xl font-bold">Как скачать?</h2>
+              <button onClick={() => setDownloadMethodOpen(false)} className="p-2 rounded-lg hover:bg-white/10"><X size={18} /></button>
+            </div>
+            <p className="text-sm text-zinc-400 mb-5">Выберите, куда отправить выбранные треки.</p>
+            <div className="grid grid-cols-2 gap-3">
+              <button onClick={chooseDiskDownload} className="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 p-4 text-left transition">
+                <Download className="text-green-400 mb-3" size={22} />
+                <div className="font-semibold">На диск</div>
+                <div className="text-xs text-zinc-500 mt-1">Сохранить на компьютер</div>
+              </button>
+              <button onClick={chooseTelegramDownload} className="rounded-xl border border-sky-400/30 bg-sky-400/10 hover:bg-sky-400/20 p-4 text-left transition">
+                <Send className="text-sky-400 mb-3" size={22} />
+                <div className="font-semibold">В Telegram</div>
+                <div className="text-xs text-zinc-500 mt-1">Получить mp3 в боте</div>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {telegramPairingOpen && (
+        <div className="fixed inset-0 z-[121] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="telegram-download-modal w-full max-w-md rounded-2xl bg-zinc-900 border border-white/10 shadow-2xl p-6 text-center text-white">
+            <div className="flex items-center justify-between mb-4 text-left">
+              <h2 className="text-xl font-bold">Подключение Telegram</h2>
+              <button onClick={() => setTelegramPairingOpen(false)} className="p-2 rounded-lg hover:bg-white/10"><X size={18} /></button>
+            </div>
+            {telegramPairingError ? <p className="text-sm text-rose-400 mb-4">{telegramPairingError}</p> : <>
+              <p className="text-sm text-zinc-400">Откройте бота и отправьте ему этот код:</p>
+              <div className="my-5 text-4xl tracking-[0.35em] font-mono font-bold text-sky-400">{telegramPairingCode}</div>
+              <p className="text-xs text-zinc-500">Ожидаю подтверждение… После ввода кода скачивание начнётся автоматически.</p>
+            </>}
+          </div>
+        </div>
+      )}
 
       
       {/* Queue Modal */}
@@ -4714,11 +4783,12 @@ const handleNext = () => {
   );
 }
 
-function LyricsModal({ isOpen, onClose, currentTrack, currentTime, onSeek, isPlayerHidden, onTogglePlayer, lyricsAnimation }: { isOpen: boolean, onClose: () => void, currentTrack: Track | null, currentTime: number, onSeek: (time: number) => void, isPlayerHidden: boolean, onTogglePlayer: () => void, lyricsAnimation: 'classic' | 'apple' }) {
+function LyricsModal({ isOpen, onClose, currentTrack, currentTime, audioRef, getPlaybackTime, isPlaying, onSeek, isPlayerHidden, onTogglePlayer, lyricsAnimation, lyricsProvider, lyricsHighlight, lyricsDeltaTiming, lyricsAppearancePercent, onWordTimingAvailableChange }: { isOpen: boolean, onClose: () => void, currentTrack: Track | null, currentTime: number, audioRef: React.RefObject<HTMLAudioElement | null>, getPlaybackTime: () => number, isPlaying: boolean, onSeek: (time: number) => void, isPlayerHidden: boolean, onTogglePlayer: () => void, lyricsAnimation: 'classic' | 'apple', lyricsProvider: LyricsProvider, lyricsHighlight: LyricsHighlight, lyricsDeltaTiming: boolean, lyricsAppearancePercent: number, onWordTimingAvailableChange: (available: boolean) => void }) {
   const [trackName, setTrackName] = useState('');
   const [artistName, setArtistName] = useState('');
   const [syncedLyrics, setSyncedLyrics] = useState<LyricLine[] | null>(null);
   const [plainLyrics, setPlainLyrics] = useState<string | null>(null);
+  const [lyricsSource, setLyricsSource] = useState<LyricsProvider | null>(null);
   const [translatedSyncedLyrics, setTranslatedSyncedLyrics] = useState<LyricLine[] | null>(null);
   const [translatedPlainLyrics, setTranslatedPlainLyrics] = useState<string | null>(null);
 
@@ -4786,7 +4856,8 @@ function LyricsModal({ isOpen, onClose, currentTrack, currentTime, onSeek, isPla
   const [isSearchVisible, setIsSearchVisible] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeLineRef = useRef<HTMLDivElement>(null);
-  const lastSearchedTrackId = useRef<string | null>(null);
+  const lyricsRequestRef = useRef<AbortController | null>(null);
+  const [preciseTime, setPreciseTime] = useState(currentTime);
   const [isUserScrolling, setIsUserScrolling] = useState(false);
   const scrollTimeout = useRef<NodeJS.Timeout | null>(null);
 
@@ -4803,108 +4874,103 @@ function LyricsModal({ isOpen, onClose, currentTrack, currentTime, onSeek, isPla
   };
 
   const searchLyrics = async (tName: string, aName: string) => {
-    if (!tName) {
-      setError("Введите название песни");
+    if (!tName.trim()) {
+      setError('Введите название песни');
       return;
     }
-
+    lyricsRequestRef.current?.abort();
+    const request = new AbortController();
+    lyricsRequestRef.current = request;
     setIsLoading(true);
+    setIsSearchVisible(true);
     setError(null);
+    setLyricsSource(null);
+    onWordTimingAvailableChange(false);
     setSyncedLyrics(null);
     setPlainLyrics(null);
     setTranslatedSyncedLyrics(null);
     setTranslatedPlainLyrics(null);
-
     try {
-      // First try exact get
-      const getUrl = `https://lrclib.net/api/get?track_name=${encodeURIComponent(tName)}&artist_name=${encodeURIComponent(aName)}`;
-      const getRes = await fetch(getUrl);
-      
-      let bestMatch = null;
-      if (getRes.ok) {
-        bestMatch = await getRes.json();
+      const result = await fetchLyrics({
+        title: tName,
+        artist: aName,
+        durationMs: tName === currentTrack?.title ? currentTrack.durationMs : undefined,
+      }, lyricsProvider, request.signal);
+      if (request.signal.aborted) return;
+      if (result) {
+        setLyricsSource(result.provider || lyricsProvider);
+        onWordTimingAvailableChange(Boolean(result.lines?.some(line => line.words?.length)));
+        setSyncedLyrics(result.lines);
+        setPlainLyrics(result.plain);
+        setIsSearchVisible(false);
       } else {
-        // Fallback to fuzzy search
-        const url = new URL('https://lrclib.net/api/search');
-        url.searchParams.append('track_name', tName);
-        if (aName) {
-          url.searchParams.append('artist_name', aName);
-        }
-
-        const res = await fetch(url.toString());
-        if (!res.ok) throw new Error("Ошибка при поиске");
-
-        const data = await res.json();
-        if (data && data.length > 0) {
-          bestMatch = data[0];
-        }
-      }
-
-      if (bestMatch) {
-        if (bestMatch.syncedLyrics) {
-          setSyncedLyrics(parseLrc(bestMatch.syncedLyrics));
-          setIsSearchVisible(false);
-        } else if (bestMatch.plainLyrics) {
-          setPlainLyrics(bestMatch.plainLyrics);
-          setIsSearchVisible(false);
-        } else {
-          setError("Текст не найден, но песня есть в базе");
-          setIsSearchVisible(true);
-        }
-      } else {
-        setError("Текст не найден");
-        setIsSearchVisible(true);
+        setError('Текст не найден. Уточните название и исполнителя.');
       }
     } catch (err) {
-      setError("Произошла ошибка при поиске текста");
-      console.error(err);
-      setIsSearchVisible(true);
+      if (!request.signal.aborted) setError('Провайдер текста недоступен. Повторите поиск или выберите другой провайдер в настройках.');
     } finally {
-      setIsLoading(false);
+      if (!request.signal.aborted) setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    if (currentTrack && currentTrack.id !== lastSearchedTrackId.current) {
-      lastSearchedTrackId.current = currentTrack.id;
-      const tName = currentTrack.title;
-      const aName = currentTrack.artist === 'Unknown Artist' ? '' : currentTrack.artist;
-      setTrackName(tName);
-      setArtistName(aName);
-      searchLyrics(tName, aName);
+    if (isOpen) {
+      setSyncedLyrics(null);
+      setPlainLyrics(null);
+      setLyricsSource(null);
+      setTranslatedSyncedLyrics(null);
+      setTranslatedPlainLyrics(null);
+      setIsLoading(false);
+      setIsSearchVisible(true);
+      const artist = currentTrack?.artist === 'Unknown Artist' ? '' : currentTrack?.artist || '';
+      setTrackName(currentTrack?.title || '');
+      setArtistName(artist);
+      if (currentTrack) void searchLyrics(currentTrack.title, artist);
     }
-  }, [currentTrack]);
+    return () => lyricsRequestRef.current?.abort();
+  }, [isOpen, currentTrack?.id, currentTrack?.title, currentTrack?.artist, lyricsProvider]);
 
-  let activeIndex = -1;
-  const currentSyncedList = translatedSyncedLyrics || syncedLyrics;
-  
-  if (currentSyncedList) {
-    for (let i = 0; i < currentSyncedList.length; i++) {
-      if (currentTime >= currentSyncedList[i].time) {
-        activeIndex = i;
-      } else {
-        break;
+  // Audio timeupdate can be too sparse for short words; read the actual clock while lyrics are visible.
+  useEffect(() => {
+    if (!isOpen || !syncedLyrics?.length) return;
+    const audio = audioRef.current;
+    const readTime = () => { if (audio) setPreciseTime(getPlaybackTime()); };
+    readTime();
+    // Paused playback and seeks must also update the exact letter position.
+    const events = ['timeupdate', 'seeking', 'seeked', 'pause', 'loadedmetadata'];
+    events.forEach(event => audio?.addEventListener(event, readTime));
+    let frame = 0;
+    let previous = 0;
+    const updateTime = (now: number) => {
+      if (now - previous >= (lyricsHighlight === 'word' && !lyricsDeltaTiming ? 32 : 16)) {
+        readTime();
+        previous = now;
       }
-    }
-  }
-
-  const timeToStart = currentSyncedList && currentSyncedList.length > 0 ? currentSyncedList[0].time - currentTime : 0;
-  const isWaitingForFirstLine = timeToStart > 0;
-
-  const formatTimer = (time: number) => {
-    const secs = Math.ceil(time);
-    if (secs >= 60) {
-      const m = Math.floor(secs / 60);
-      const s = secs % 60;
-      return `${m}:${s.toString().padStart(2, '0')}`;
-    }
-    return secs.toString();
-  };
+      frame = requestAnimationFrame(updateTime);
+    };
+    if (isPlaying) frame = requestAnimationFrame(updateTime);
+    return () => {
+      cancelAnimationFrame(frame);
+      events.forEach(event => audio?.removeEventListener(event, readTime));
+    };
+  }, [isOpen, isPlaying, syncedLyrics, audioRef, getPlaybackTime, lyricsHighlight, lyricsDeltaTiming]);
+  const playbackTime = syncedLyrics?.length ? preciseTime : currentTime;
+  const currentSyncedList = translatedSyncedLyrics || syncedLyrics;
+  // Keep original vocal timing when a translation contains only line timestamps.
+  const timeline = useMemo(() => buildLyricTimeline(syncedLyrics || []), [syncedLyrics]);
+  const nextWordTimes = useMemo(() => getNextLyricWordTimes(syncedLyrics || []), [syncedLyrics]);
+  const trackDuration = Number.isFinite(audioRef.current?.duration) ? audioRef.current!.duration : (currentTrack?.durationMs ? currentTrack.durationMs / 1000 : undefined);
+  const { activeIndex, lastStartedIndex, countdown } = getLyricPlaybackState(timeline, playbackTime, trackDuration);
 
   useEffect(() => {
     if (isOpen && activeLineRef.current && scrollRef.current && !isSearchVisible && !isUserScrolling) {
       const container = scrollRef.current;
       const element = activeLineRef.current;
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        container.style.scrollBehavior = 'auto';
+        element.scrollIntoView({ behavior: 'instant', block: 'center' });
+        return;
+      }
       
       if (lyricsAnimation === 'apple') {
         // Отключаем нативный скролл, чтобы он не конфликтовал с нашей JS-анимацией
@@ -4924,7 +4990,7 @@ function LyricsModal({ isOpen, onClose, currentTrack, currentTime, onSeek, isPla
         const distance = finalTop - startTop;
         const startTime = performance.now();
         // Длительность прокрутки (600мс идеально ложится под нашу анимацию текста)
-        const duration = 600;
+        const duration = countdown ? 200 : 600;
 
         const animateScroll = (currentTime: number) => {
           const elapsed = Math.max(0, currentTime - startTime);
@@ -4954,8 +5020,11 @@ function LyricsModal({ isOpen, onClose, currentTrack, currentTime, onSeek, isPla
           block: 'center',
         });
       }
+      return () => {
+        if ((container as any)._scrollAnimation) cancelAnimationFrame((container as any)._scrollAnimation);
+      };
     }
-  }, [activeIndex, isSearchVisible, isOpen, isUserScrolling, lyricsAnimation]);
+  }, [activeIndex, countdown?.afterIndex, isSearchVisible, isOpen, isUserScrolling, lyricsAnimation]);
 
   if (!isOpen) return null;
 
@@ -4992,14 +5061,17 @@ function LyricsModal({ isOpen, onClose, currentTrack, currentTime, onSeek, isPla
       {/* Top Gradient for text fade out */}
       <div className="absolute top-0 left-0 right-0 h-40 bg-gradient-to-b from-black/80 to-transparent z-10 pointer-events-none"></div>
 
-      <div className={`p-6 flex items-center justify-between shrink-0 transition-all duration-500 absolute top-0 left-0 right-0 z-50 ${isPlayerHidden ? 'opacity-0 hover:opacity-100 bg-gradient-to-b from-black/60 to-transparent' : ''}`}>
-        <button
-          onClick={() => setIsSearchVisible(true)}
-          className={`text-white/70 hover:text-white transition-colors flex items-center gap-2 font-bold ${isSearchVisible ? 'invisible' : ''}`}
-        >
-          <Search size={20} />
-          Искать другой текст
-        </button>
+      <div className={`p-6 pr-20 flex items-center justify-between shrink-0 transition-all duration-500 absolute top-0 left-0 right-0 z-50 ${isPlayerHidden ? 'opacity-0 hover:opacity-100 bg-gradient-to-b from-black/60 to-transparent' : ''}`}>
+        <div className={`flex flex-col gap-1 ${isSearchVisible ? 'invisible' : ''}`}>
+          <button
+            onClick={() => setIsSearchVisible(true)}
+            className="text-white/70 hover:text-white transition-colors flex items-center gap-2 font-bold"
+          >
+            <Search size={20} />
+            Искать другой текст
+          </button>
+          {lyricsSource && <span className="text-xs text-white/50">Текст из {lyricsSource === 'lyricsplus' ? 'LyricsPlus' : 'LRCLIB'}</span>}
+        </div>
         <div className="flex items-center gap-2 relative">
           <button 
             onClick={() => setTextAlign(prev => prev === 'left' ? 'center' : prev === 'center' ? 'right' : 'left')} 
@@ -5076,18 +5148,18 @@ function LyricsModal({ isOpen, onClose, currentTrack, currentTime, onSeek, isPla
           <button onClick={onTogglePlayer} className="text-white/70 hover:text-white p-2 rounded-full hover:bg-white/10 transition-colors" title={isPlayerHidden ? "Показать плеер" : "На весь экран"}>
             {isPlayerHidden ? <Minimize2 size={24} /> : <Maximize2 size={24} />}
           </button>
-          <button onClick={onClose} className="text-white/70 hover:text-white p-2 rounded-full hover:bg-white/10 transition-colors" title="Закрыть">
-            <X size={28} />
-          </button>
         </div>
       </div>
+      <button onClick={onClose} className="lyrics-close-button absolute top-6 right-6 z-[60] text-white p-2 rounded-full bg-black/20 hover:bg-white/10 transition-colors" title="Закрыть текст" aria-label="Закрыть текст">
+        <X size={28} />
+      </button>
 
       {isSearchVisible ? (
         <div className="flex-1 flex items-center justify-center p-6 overflow-y-auto relative z-10">
           <div className="bg-zinc-900/90 p-8 rounded-2xl w-full max-w-2xl shadow-2xl backdrop-blur-md border border-white/10">
             <h2 className="text-2xl font-bold mb-6 flex items-center gap-2 text-white">
               <Mic size={28} className="text-green-500" />
-              Поиск текста (lrclib)
+              Поиск текста ({lyricsProvider === 'lyricsplus' ? 'LyricsPlus' : 'LRCLIB'})
             </h2>
 
             <div className="space-y-4">
@@ -5165,35 +5237,35 @@ function LyricsModal({ isOpen, onClose, currentTrack, currentTime, onSeek, isPla
           >
             {currentSyncedList && (
               <div className={`flex flex-col gap-6 py-[15vh] mx-auto w-full max-w-4xl ${textAlign === 'left' ? 'text-left items-start' : textAlign === 'right' ? 'text-right items-end' : 'text-center items-center'}`}>
-              {isWaitingForFirstLine && (
-                <div
-                  ref={activeIndex === -1 ? activeLineRef : null}
-                  className={`text-4xl md:text-5xl font-bold transition-all duration-300 text-green-500 scale-105 flex items-center gap-4 mb-8 ${textAlign === 'left' ? 'origin-left justify-start' : textAlign === 'right' ? 'origin-right justify-end' : 'origin-center justify-center'}`}
-                >
-                  <div className="flex gap-2">
-                    <div className="w-3 h-3 bg-green-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <div className="w-3 h-3 bg-green-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <div className="w-3 h-3 bg-green-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                  </div>
-                  <span className="font-mono w-20 text-left">{formatTimer(timeToStart)}</span>
-                </div>
-              )}
+              {countdown?.afterIndex === -1 && <LyricsCountdown countdown={countdown} containerRef={activeLineRef} textAlign={textAlign} />}
               {currentSyncedList.map((line, index) => {
+                if (!line.text.trim()) return null;
                 const isActive = index === activeIndex;
-                const isPassed = index < activeIndex;
+                const isPassed = index < lastStartedIndex || countdown?.afterIndex === index;
                 return (
+                  <React.Fragment key={index}>
                   <div
-                    key={index}
                     ref={isActive ? activeLineRef : null}
-                    onClick={() => onSeek(line.time)}
-                    className={`text-4xl md:text-5xl font-bold cursor-pointer hover:text-white ${
+                    onClick={() => onSeek(getLyricSeekTime(syncedLyrics?.[index] || line))}
+                    className={`${countdown?.afterIndex === index ? 'lyric-line-in-pause' : ''} text-4xl md:text-5xl font-bold cursor-pointer hover:text-white ${
                       lyricsAnimation === 'apple'
                         ? `ease-out ${isActive ? `transition-all duration-500 text-white opacity-100 scale-[1.05] translate-y-0 !blur-none ${textAlign === 'left' ? 'origin-left' : textAlign === 'right' ? 'origin-right' : 'origin-center'}` : isPassed ? 'transition-all duration-[700ms] text-white/0 opacity-0 -translate-y-6 blur-[8px] scale-95' : 'transition-all duration-[700ms] text-white/40 blur-[1.5px] translate-y-4 scale-100'}`
                         : `transition-all duration-300 ${isActive ? `text-white scale-[1.05] ${textAlign === 'left' ? 'origin-left' : textAlign === 'right' ? 'origin-right' : 'origin-center'}` : isPassed ? 'text-white/50' : 'text-black/30'}`
                     }`}
                   >
-                    {line.text}
+                    {line.words?.length ? line.words.map((word, wordIndex) => (
+                      <TimedLyricWord
+                        key={wordIndex}
+                        word={word}
+                        highlight={lyricsHighlight}
+                        progress={lyricsHighlight === 'word' && !lyricsDeltaTiming ? (playbackTime >= word.time ? 1 : 0)
+                          : getLyricWordProgress(word, playbackTime, lyricsDeltaTiming ? nextWordTimes[index]?.[wordIndex] : line.words?.[wordIndex + 1]?.time, currentSyncedList[index + 1]?.time)}
+                        appearanceFraction={lyricsDeltaTiming ? lyricsAppearancePercent / 100 : undefined}
+                      />
+                    )) : line.text}
                   </div>
+                  {countdown?.afterIndex === index && <LyricsCountdown countdown={countdown} containerRef={activeLineRef} textAlign={textAlign} />}
+                  </React.Fragment>
                 );
               })}
             </div>

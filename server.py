@@ -10,6 +10,7 @@ import threading
 import subprocess
 import time
 import aiohttp
+import asyncio
 
 import traceback
 import json
@@ -364,6 +365,17 @@ async def extract_spotify(url: str):
 
 # Кэш прямых ссылок для проксирования
 stream_url_cache = {}
+STREAM_FORMAT = 'bestaudio[ext=m4a][protocol=https]/bestaudio[ext=webm][protocol=https]/bestaudio[protocol=https]/best[ext=mp4][protocol=https]'
+
+def extract_stream_source(id):
+    options = {'format': STREAM_FORMAT, 'quiet': True, 'no_warnings': True, 'noplaylist': True}
+    with yt_dlp.YoutubeDL(options) as ydl:
+        info = ydl.extract_info(id, download=False)
+    if not info.get('url'):
+        raise ValueError('Stream URL not found')
+    source = {'url': info['url'], 'headers': info.get('http_headers', {}), 'ext': info.get('ext')}
+    stream_url_cache[id] = source
+    return source
 
 # НОВОЕ: Получение прямой ссылки на аудиопоток (Стриминг)
 @app.get("/stream")
@@ -376,43 +388,33 @@ async def get_stream_url(id: str, mode: str = "stream"):
         if mode == "download" and os.path.exists(local_path):
             return {"url": f"http://127.0.0.1:8000/local_files/{filename}"}
 
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'quiet': True,
-            'no_warnings': True
-        }
-        
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # Получаем всю информацию о видео
-            info = ydl.extract_info(id, download=False)
-            stream_url = info.get('url')
-            stream_url_cache[id] = stream_url
-            
-            # Если выбран режим загрузки, но файла нет - скачиваем в фоне
-            if mode == "download":
-                def bg_download():
-                    d_opts = {
-                        'format': 'bestaudio/best',
-                        'outtmpl': f'{DOWNLOAD_DIR}/%(id)s.%(ext)s',
-                        'postprocessors': [{
-                            'key': 'FFmpegExtractAudio',
-                            'preferredcodec': 'mp3',
-                            'preferredquality': '192',
-                        }],
-                        'quiet': True,
-                        'no_warnings': True
-                    }
-                    try:
-                        with yt_dlp.YoutubeDL(d_opts) as d_ydl:
-                            d_ydl.extract_info(id, download=True)
-                    except Exception as e:
-                        print(f"BG Download error: {e}")
-                
-                threading.Thread(target=bg_download, daemon=True).start()
+        await asyncio.to_thread(extract_stream_source, id)
 
-            # Вместо прямой ссылки возвращаем ссылку на наш локальный прокси
-            return {"url": f"http://127.0.0.1:8000/proxy_stream?id={id}"}
+        # Если выбран режим загрузки, но файла нет - скачиваем в фоне
+        if mode == "download":
+            def bg_download():
+                d_opts = {
+                    'format': 'bestaudio/best',
+                    'outtmpl': f'{DOWNLOAD_DIR}/%(id)s.%(ext)s',
+                    'postprocessors': [{
+                        'key': 'FFmpegExtractAudio',
+                        'preferredcodec': 'mp3',
+                        'preferredquality': '192',
+                    }],
+                    'quiet': True,
+                    'no_warnings': True
+                }
+                try:
+                    with yt_dlp.YoutubeDL(d_opts) as d_ydl:
+                        d_ydl.extract_info(id, download=True)
+                except Exception as e:
+                    print(f"BG Download error: {e}")
             
+            threading.Thread(target=bg_download, daemon=True).start()
+
+        # Вместо прямой ссылки возвращаем ссылку на наш локальный прокси
+        return {"url": f"http://127.0.0.1:8000/proxy_stream?id={id}"}
+
     except Exception as e:
         print(f"Stream error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -421,21 +423,16 @@ async def get_stream_url(id: str, mode: str = "stream"):
 async def proxy_stream(id: str, request: Request, retry: str = None):
     stream_url = stream_url_cache.get(id)
     
-    def get_fresh_url():
-        ydl_opts = {'format': 'bestaudio/best', 'quiet': True, 'no_warnings': True}
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(id, download=False)
-            url = info.get('url')
-            stream_url_cache[id] = url
-            return url
+    async def get_fresh_url():
+        return await asyncio.to_thread(extract_stream_source, id)
 
     if not stream_url or retry:
         try:
-            stream_url = get_fresh_url()
+            stream_url = await get_fresh_url()
         except Exception as e:
             raise HTTPException(status_code=404, detail="Stream not found")
 
-    headers = {}
+    headers = dict(stream_url.get('headers', {}))
     range_header = request.headers.get("Range")
     if range_header:
         headers["Range"] = range_header
@@ -443,18 +440,25 @@ async def proxy_stream(id: str, request: Request, retry: str = None):
     session = aiohttp.ClientSession()
     try:
         # Не закрываем сессию до завершения стриминга
-        resp = await session.get(stream_url, headers=headers)
+        resp = await session.get(stream_url['url'], headers=headers)
         
         # Если ссылка протухла (обычно дает 403 или 410), получаем новую и пробуем еще раз
         if resp.status >= 400:
             resp.close()
-            stream_url = get_fresh_url()
-            resp = await session.get(stream_url, headers=headers)
+            stream_url = await get_fresh_url()
+            headers = dict(stream_url.get('headers', {}))
+            if range_header:
+                headers['Range'] = range_header
+            resp = await session.get(stream_url['url'], headers=headers)
             if resp.status >= 400:
                  resp.close()
                  await session.close()
                  raise HTTPException(status_code=500, detail="Upstream returned error")
             
+        content_type = resp.headers.get('Content-Type', '')
+        if any(marker in content_type for marker in ('text/', 'json', 'mpegurl')):
+            resp.close()
+            raise HTTPException(status_code=502, detail='Upstream did not return a playable audio file')
     except Exception as e:
         await session.close()
         raise HTTPException(status_code=500, detail="Cannot connect to stream")
@@ -472,11 +476,15 @@ async def proxy_stream(id: str, request: Request, retry: str = None):
         if k.lower() in ("content-type", "content-length", "content-range", "accept-ranges"):
             response_headers[k] = v
 
+    if not content_type or 'application/octet-stream' in content_type:
+        content_type = {'m4a': 'audio/mp4', 'mp4': 'audio/mp4', 'webm': 'audio/webm', 'opus': 'audio/ogg'}.get(stream_url.get('ext'), 'audio/mpeg')
+        response_headers['Content-Type'] = content_type
+
     return StreamingResponse(
         content=generate(),
         status_code=resp.status,
         headers=response_headers,
-        media_type=resp.headers.get("Content-Type", "audio/mpeg")
+        media_type=content_type
     )
 
 @app.get("/local_files/{filename}")

@@ -82,7 +82,7 @@ export interface DailyStat {
 }
 export type UserStats = Record<string, DailyStat>;
 
-export type Tab = 'home' | 'search' | 'library' | 'settings' | 'track' | 'comments';
+export type Tab = 'home' | 'search' | 'library' | 'settings' | 'track' | 'comments' | 'connect';
 
 export interface Comment {
   id: string;

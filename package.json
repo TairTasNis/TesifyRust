@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "node --import tsx --test src/services/lyrics.test.ts src/services/playback.test.ts"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

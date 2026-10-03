@@ -10,10 +10,10 @@ interface Props {
   setTrackMenuOpenId: (id: string | null) => void;
   hideCovers: boolean;
   hideArtist: boolean;
-  onOpenTrack: (item: SearchResultItem) => void;
+  onOpenTrack: (item: Extract<SearchResultItem, { type: 'track' }>) => void;
   onOpenCollection: (item: SearchResultItem) => void;
   onOpenAllTracks: (tracks: Track[]) => void;
-  onToggleAdd: (item: SearchResultItem, playlistId: string) => void;
+  onToggleAdd: (item: Extract<SearchResultItem, { type: 'track' }>, playlistId: string) => void;
   openingSearchCollectionId: string | null;
   isSameTrack: (a: Track, b: Track) => boolean;
 }
@@ -93,7 +93,7 @@ const SpotifySearchResults: React.FC<Props> = ({
   const allTracks = results.filter(i => i.type === 'track');
   const sideTracks = allTracks.filter(t => t.id !== featuredId).slice(0, 4);
   const albums = results.filter(i => i.type === 'album');
-  const artists = results.filter(i => i.type === 'artist' && (!featured || featured.type !== 'artist' || i.id !== featured.id));
+  const artists = results.filter((i): i is Extract<SearchResultItem, { type: 'artist' }> => i.type === 'artist' && (!featured || featured.type !== 'artist' || i.id !== featured.id));
   const spotifyPlaylists = results.filter(i => i.type === 'playlist');
 
   // Листание горизонтальных строк колёсиком мыши
@@ -104,7 +104,7 @@ const SpotifySearchResults: React.FC<Props> = ({
     }
   };
 
-  const renderTrackAddButton = (item: SearchResultItem) => {
+  const renderTrackAddButton = (item: Extract<SearchResultItem, { type: 'track' }>) => {
     const isSavedGlobally = playlists.some(p => p.tracks.some(t => isSameTrack(t, item)));
     return (
       <div className="relative shrink-0">
@@ -137,7 +137,7 @@ const SpotifySearchResults: React.FC<Props> = ({
     );
   };
 
-  const renderTrackRow = (item: SearchResultItem) => {
+  const renderTrackRow = (item: Extract<SearchResultItem, { type: 'track' }>) => {
     const title = item.type === 'track' ? item.title : '';
     const subtitle = item.type === 'track' ? item.artist : '';
     const imageUrl = item.type === 'track' ? item.thumbnail : undefined;

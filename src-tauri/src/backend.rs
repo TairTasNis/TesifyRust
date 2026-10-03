@@ -23,6 +23,7 @@ use std::{
     collections::{HashMap, VecDeque},
     env,
     error::Error,
+    io::SeekFrom,
     net::SocketAddr,
     path::{Path, PathBuf},
     process::Stdio,
@@ -31,7 +32,7 @@ use std::{
 };
 use tokio::{
     fs,
-    io::{AsyncBufReadExt, BufReader},
+    io::{AsyncBufReadExt, AsyncReadExt, AsyncSeekExt, BufReader},
     net::TcpListener,
     process::Command,
     sync::Semaphore,
@@ -44,11 +45,16 @@ use urlencoding::encode;
 #[path = "search.rs"]
 mod spotify_search;
 use spotify_search::SpotifyGuestClient;
+#[path = "audio_range.rs"]
+mod audio_range;
+use audio_range::{AudioRange, ContentRange, CHUNK_SIZE};
 
 const DEFAULT_PORT: u16 = 8000;
 const DEFAULT_DOWNLOAD_DIR: &str = "downloads";
 const YT_DLP_TIMEOUT_SECS: u64 = 90;
 const YT_DLP_DOWNLOAD_TIMEOUT_SECS: u64 = 600;
+// HTML audio needs a media file, not an HLS/DASH manifest. Prefer AAC for WebView2.
+const STREAM_FORMAT: &str = "bestaudio[ext=m4a][protocol=https]/bestaudio[ext=webm][protocol=https]/bestaudio[protocol=https]/best[ext=mp4][protocol=https]";
 const SPOTIFY_PLAYLIST_HASH: &str =
     "9c53fb83f35c6a177be88bf1b67cb080b853e86b576ed174216faa8f9164fc8f";
 
@@ -67,12 +73,19 @@ struct BackendInner {
     start_time: Instant,
     last_ping_time: Mutex<Instant>,
     logs: Mutex<VecDeque<LogEntry>>,
-    stream_url_cache: Mutex<HashMap<String, String>>,
+    stream_url_cache: Mutex<HashMap<String, StreamSource>>,
     downloads: Mutex<HashMap<String, DownloadTask>>,
     next_task_id: std::sync::atomic::AtomicU64,
     download_slots: Semaphore,
     http: Client,
     yt_dlp: YtDlpRunner,
+}
+
+#[derive(Clone, Debug)]
+struct StreamSource {
+    url: String,
+    headers: HashMap<String, String>,
+    content_type: &'static str,
 }
 
 #[derive(Clone, Debug)]
@@ -162,6 +175,41 @@ struct LogsQuery {
 #[derive(Deserialize)]
 struct DownloadDirReq {
     path: String,
+}
+
+#[derive(Deserialize, Serialize)]
+struct TelegramPairingStartReq {
+    client_id: String,
+}
+
+#[derive(Deserialize, Serialize)]
+struct TelegramJobStartReq {
+    pairing_id: String,
+    total: usize,
+}
+
+#[derive(Deserialize, Serialize)]
+struct TelegramProgressReq {
+    completed: usize,
+    total: usize,
+    current: String,
+    speed: String,
+    eta: String,
+    state: String,
+}
+
+#[derive(Deserialize)]
+struct TelegramSendReq {
+    job_id: String,
+    filename: String,
+    title: String,
+    artist: String,
+    index: usize,
+}
+
+#[derive(Deserialize)]
+struct TelegramPairingQuery {
+    pairing_id: String,
 }
 
 #[derive(Serialize)]
@@ -382,8 +430,144 @@ fn router(state: BackendState) -> Router {
         )
         .route("/api/settings/downloads_all", delete(delete_all_downloads))
         .route("/download", get(download_audio))
+        .route("/api/telegram/pairing/start", post(telegram_pairing_start))
+        .route("/api/telegram/pairing/status", get(telegram_pairing_status))
+        .route("/api/telegram/job/start", post(telegram_job_start))
+        .route("/api/telegram/progress", post(telegram_progress))
+        .route("/api/telegram/send", post(telegram_send))
         .with_state(state)
         .layer(cors)
+}
+
+fn telegram_gateway_url() -> String {
+    env::var("TESIFY_TELEGRAM_GATEWAY_URL")
+        .unwrap_or_else(|_| "http://158.180.63.46:5090".to_string())
+        .trim_end_matches('/')
+        .to_string()
+}
+
+async fn telegram_pairing_start(
+    State(state): State<BackendState>,
+) -> Result<Json<Value>, ApiError> {
+    let req = TelegramPairingStartReq {
+        client_id: format!("tesify-{}-{}", std::process::id(), now_ms()),
+    };
+    gateway_json(
+        state
+            .inner
+            .http
+            .post(format!("{}/v1/pairing/start", telegram_gateway_url()))
+            .json(&req),
+    )
+    .await
+}
+
+async fn telegram_pairing_status(
+    State(state): State<BackendState>,
+    Query(query): Query<TelegramPairingQuery>,
+) -> Result<Json<Value>, ApiError> {
+    gateway_json(state.inner.http.get(format!(
+        "{}/v1/pairing/{}",
+        telegram_gateway_url(),
+        encode(&query.pairing_id)
+    )))
+    .await
+}
+
+async fn telegram_job_start(
+    State(state): State<BackendState>,
+    Json(req): Json<TelegramJobStartReq>,
+) -> Result<Json<Value>, ApiError> {
+    gateway_json(
+        state
+            .inner
+            .http
+            .post(format!("{}/v1/jobs/start", telegram_gateway_url()))
+            .json(&req),
+    )
+    .await
+}
+
+async fn telegram_progress(
+    State(state): State<BackendState>,
+    Json(req): Json<Value>,
+) -> Result<Json<Value>, ApiError> {
+    let job_id = req["job_id"]
+        .as_str()
+        .ok_or_else(|| ApiError::bad_request("Missing Telegram job id"))?;
+    let body = TelegramProgressReq {
+        completed: req["completed"].as_u64().unwrap_or(0) as usize,
+        total: req["total"].as_u64().unwrap_or(1) as usize,
+        current: req["current"].as_str().unwrap_or_default().to_string(),
+        speed: req["speed"].as_str().unwrap_or_default().to_string(),
+        eta: req["eta"].as_str().unwrap_or("—").to_string(),
+        state: req["state"].as_str().unwrap_or("uploading").to_string(),
+    };
+    gateway_json(
+        state
+            .inner
+            .http
+            .post(format!(
+                "{}/v1/jobs/{}/progress",
+                telegram_gateway_url(),
+                encode(job_id)
+            ))
+            .json(&body),
+    )
+    .await
+}
+
+async fn telegram_send(
+    State(state): State<BackendState>,
+    Json(req): Json<TelegramSendReq>,
+) -> Result<Json<Value>, ApiError> {
+    let filename = safe_filename(&req.filename)?.to_string();
+    let path = state.download_dir().join(&filename);
+    if !path.exists() {
+        return Err(ApiError::not_found("Downloaded file not found"));
+    }
+    let part = reqwest::multipart::Part::file(&path)
+        .await
+        .map_err(|e| ApiError::internal(format!("Cannot open downloaded file: {e}")))?
+        .file_name(filename)
+        .mime_str("audio/mpeg")
+        .map_err(|e| ApiError::internal(format!("Cannot prepare audio upload: {e}")))?;
+    let form = reqwest::multipart::Form::new()
+        .text("title", req.title)
+        .text("artist", req.artist)
+        .text("index", req.index.to_string())
+        .part("file", part);
+    gateway_json(
+        state
+            .inner
+            .http
+            .post(format!(
+                "{}/v1/jobs/{}/upload",
+                telegram_gateway_url(),
+                encode(&req.job_id)
+            ))
+            .multipart(form),
+    )
+    .await
+}
+
+async fn gateway_json(request: reqwest::RequestBuilder) -> Result<Json<Value>, ApiError> {
+    let response = request
+        .send()
+        .await
+        .map_err(|e| ApiError::internal(format!("Telegram gateway unavailable: {e}")))?;
+    let status = response.status();
+    let body: Value = response
+        .json()
+        .await
+        .map_err(|e| ApiError::internal(format!("Invalid Telegram gateway response: {e}")))?;
+    if !status.is_success() {
+        return Err(ApiError::new(
+            status,
+            body["detail"].as_str().unwrap_or("Telegram gateway error"),
+        ));
+    }
+    Ok(Json(body))
 }
 
 async fn root() -> Json<Value> {
@@ -580,68 +764,134 @@ async fn proxy_stream(
     headers: HeaderMap,
     Query(query): Query<ProxyQuery>,
 ) -> Result<Response, ApiError> {
-    let mut stream_url = state.inner.stream_url_cache.lock().get(&query.id).cloned();
+    let range_header = headers.get(header::RANGE).and_then(|value| value.to_str().ok());
+    let requested = AudioRange::parse(range_header)
+        .ok_or_else(|| ApiError::new(StatusCode::RANGE_NOT_SATISFIABLE, "Invalid audio byte range"))?;
+    let cached = state.inner.stream_url_cache.lock().get(&query.id).cloned();
+    let source = match cached {
+        Some(source) if query.retry.is_none() => Ok(source),
+        _ => refresh_stream_url(&state, &query.id).await,
+    };
+    let result = match source {
+        Ok(source) => relay_audio_range(&state, &query.id, source, requested).await,
+        Err(error) => Err(error),
+    };
+    if let Err(error) = &result {
+        state.log("ERROR", format!("Audio {}: {}", query.id, error.message));
+    }
+    result
+}
 
-    if stream_url.is_none() || query.retry.is_some() {
-        stream_url = Some(refresh_stream_url(&state, &query.id).await?);
+async fn request_audio_chunk(
+    state: &BackendState,
+    id: &str,
+    source: &mut StreamSource,
+    start: u64,
+    end: u64,
+) -> Result<reqwest::Response, ApiError> {
+    let mut headers = HeaderMap::new();
+    headers.insert(header::RANGE, HeaderValue::from_str(&format!("bytes={start}-{end}")).unwrap());
+    let mut response = request_upstream_stream(state, source, &headers).await?;
+    if !response.status().is_success() {
+        state.log("WARN", format!("Audio {id}: upstream HTTP {} for bytes={start}-{end}; refreshing source", response.status().as_u16()));
+        *source = refresh_stream_url(state, id).await?;
+        response = request_upstream_stream(state, source, &headers).await?;
+    }
+    if !response.status().is_success() {
+        return Err(ApiError::internal(format!("Audio source returned HTTP {} for bytes={start}-{end}", response.status().as_u16())));
+    }
+    Ok(response)
+}
+
+fn upstream_content_range(response: &reqwest::Response) -> Result<ContentRange, ApiError> {
+    response.headers().get(header::CONTENT_RANGE)
+        .and_then(|value| value.to_str().ok())
+        .and_then(ContentRange::parse)
+        .ok_or_else(|| ApiError::internal("Audio source returned an invalid Content-Range"))
+}
+
+async fn relay_audio_range(
+    state: &BackendState,
+    id: &str,
+    mut source: StreamSource,
+    requested: AudioRange,
+) -> Result<Response, ApiError> {
+    let (probe_start, probe_end) = requested.initial_chunk();
+    let mut upstream = request_audio_chunk(state, id, &mut source, probe_start, probe_end).await?;
+    let upstream_type = upstream.headers().get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok()).unwrap_or("").to_string();
+    if upstream_type.contains("text/") || upstream_type.contains("json") || upstream_type.contains("mpegurl") {
+        return Err(ApiError::internal("Upstream did not return a playable audio file"));
+    }
+    let content_type = if upstream_type.is_empty() || upstream_type.contains("application/octet-stream") {
+        source.content_type.to_string()
+    } else { upstream_type };
+
+    // A source which ignores Range already streams a complete file; retain that response.
+    if upstream.status() == StatusCode::OK {
+        let length = upstream.headers().get(header::CONTENT_LENGTH).cloned();
+        let mut response = Response::new(Body::from_stream(upstream.bytes_stream()));
+        response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_str(&content_type).unwrap());
+        if let Some(length) = length { response.headers_mut().insert(header::CONTENT_LENGTH, length); }
+        return Ok(response);
     }
 
-    let mut resp =
-        request_upstream_stream(&state, stream_url.as_deref().unwrap(), &headers).await?;
-    if !resp.status().is_success() {
-        let fresh_url = refresh_stream_url(&state, &query.id).await?;
-        resp = request_upstream_stream(&state, &fresh_url, &headers).await?;
-        if !resp.status().is_success() {
-            return Err(ApiError::internal("Upstream returned error"));
-        }
+    let initial_range = upstream_content_range(&upstream)?;
+    let total = initial_range.total;
+    let (start, end) = requested.bounds(total)
+        .ok_or_else(|| ApiError::new(StatusCode::RANGE_NOT_SATISFIABLE, "Audio byte range exceeds file size"))?;
+    if matches!(requested, AudioRange::Suffix(_)) {
+        drop(upstream);
+        upstream = request_audio_chunk(state, id, &mut source, start, end.min(start.saturating_add(CHUNK_SIZE - 1))).await?;
     }
+    state.log("INFO", format!("Audio {id}: serving bytes={start}-{end}/{total} as {content_type}"));
 
-    let status = StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::OK);
-    let upstream_headers = resp.headers().clone();
-    let mut response = Response::new(Body::from_stream(resp.bytes_stream()));
-    *response.status_mut() = status;
-
-    copy_header(
-        &upstream_headers,
-        response.headers_mut(),
-        "content-type",
-        header::CONTENT_TYPE,
+    // Fetch bounded CDN chunks while presenting the complete requested range to the player.
+    let chunks = futures_util::stream::try_unfold(
+        (Some(upstream), source, state.clone(), id.to_string(), start, end, total),
+        |(first, mut source, state, id, next, end, total)| async move {
+            if next > end { return Ok::<_, std::io::Error>(None); }
+            let chunk_end = end.min(next.saturating_add(CHUNK_SIZE - 1));
+            let upstream = match first {
+                Some(response) => response,
+                None => request_audio_chunk(&state, &id, &mut source, next, chunk_end).await
+                    .map_err(|error| { state.log("ERROR", format!("Audio {id}: {}", error.message)); std::io::Error::other(error.message) })?,
+            };
+            let range = upstream_content_range(&upstream).map_err(|error| std::io::Error::other(error.message))?;
+            if range.start != next || range.end > chunk_end || range.total != total {
+                state.log("ERROR", format!("Audio {id}: inconsistent upstream byte range"));
+                return Err(std::io::Error::other("Inconsistent audio byte range"));
+            }
+            let bytes = upstream.bytes().await.map_err(|_| {
+                state.log("ERROR", format!("Audio {id}: interrupted while reading bytes={next}-{}", range.end));
+                std::io::Error::other("Audio chunk transfer failed")
+            })?;
+            if bytes.len() as u64 != range.end - range.start + 1 {
+                state.log("ERROR", format!("Audio {id}: incomplete audio chunk"));
+                return Err(std::io::Error::other("Incomplete audio chunk"));
+            }
+            Ok(Some((bytes, (None, source, state, id, range.end + 1, end, total))))
+        },
     );
-    copy_header(
-        &upstream_headers,
-        response.headers_mut(),
-        "content-length",
-        header::CONTENT_LENGTH,
-    );
-    copy_header(
-        &upstream_headers,
-        response.headers_mut(),
-        "content-range",
-        header::CONTENT_RANGE,
-    );
-    copy_header(
-        &upstream_headers,
-        response.headers_mut(),
-        "accept-ranges",
-        header::ACCEPT_RANGES,
-    );
-
-    if !response.headers().contains_key(header::CONTENT_TYPE) {
-        response
-            .headers_mut()
-            .insert(header::CONTENT_TYPE, HeaderValue::from_static("audio/mpeg"));
+    let mut response = Response::new(Body::from_stream(chunks));
+    *response.status_mut() = if requested == AudioRange::Full { StatusCode::OK } else { StatusCode::PARTIAL_CONTENT };
+    response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_str(&content_type).unwrap());
+    response.headers_mut().insert(header::CONTENT_LENGTH, HeaderValue::from_str(&(end - start + 1).to_string()).unwrap());
+    response.headers_mut().insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
+    if requested != AudioRange::Full {
+        response.headers_mut().insert(header::CONTENT_RANGE, HeaderValue::from_str(&format!("bytes {start}-{end}/{total}")).unwrap());
     }
-
     Ok(response)
 }
 
 async fn serve_local_file(
     State(state): State<BackendState>,
     AxumPath(filename): AxumPath<String>,
+    headers: HeaderMap,
 ) -> Result<Response, ApiError> {
     let filename = safe_filename(&filename)?;
     let path = state.download_dir().join(filename);
-    serve_file(path).await
+    serve_file(path, headers.get(header::RANGE).and_then(|value| value.to_str().ok())).await
 }
 
 async fn system_info(State(state): State<BackendState>) -> Json<Value> {
@@ -930,9 +1180,9 @@ async fn finalize_named_audio(
         }
 
         if fs::rename(&path, &expected_path).await.is_err() {
-            fs::copy(&path, &expected_path)
-                .await
-                .map_err(|e| ApiError::internal(format!("Cannot finalize downloaded audio: {e}")))?;
+            fs::copy(&path, &expected_path).await.map_err(|e| {
+                ApiError::internal(format!("Cannot finalize downloaded audio: {e}"))
+            })?;
             let _ = fs::remove_file(&path).await;
         }
         if expected_path.exists() {
@@ -1375,7 +1625,7 @@ async fn translate_chunk(
 async fn extract_direct_stream_url(
     state: &BackendState,
     id_or_url: &str,
-) -> Result<String, ApiError> {
+) -> Result<StreamSource, ApiError> {
     let input = normalize_media_input(id_or_url);
     let info = ytdlp_json(
         state,
@@ -1384,7 +1634,7 @@ async fn extract_direct_stream_url(
             "--skip-download",
             "--no-playlist",
             "--format",
-            "bestaudio/best",
+            STREAM_FORMAT,
             "--no-warnings",
             "--quiet",
             &input,
@@ -1393,10 +1643,36 @@ async fn extract_direct_stream_url(
     )
     .await?;
 
-    direct_url_from_info(&info).ok_or_else(|| ApiError::internal("Stream URL not found"))
+    let url =
+        direct_url_from_info(&info).ok_or_else(|| ApiError::internal("Stream URL not found"))?;
+    let headers = info
+        .get("http_headers")
+        .and_then(Value::as_object)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(|(name, value)| {
+                    value
+                        .as_str()
+                        .map(|value| (name.clone(), value.to_string()))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let content_type = match info.get("ext").and_then(Value::as_str) {
+        Some("m4a") | Some("mp4") => "audio/mp4",
+        Some("webm") => "audio/webm",
+        Some("ogg") | Some("opus") => "audio/ogg",
+        _ => "audio/mpeg",
+    };
+    Ok(StreamSource {
+        url,
+        headers,
+        content_type,
+    })
 }
 
-async fn refresh_stream_url(state: &BackendState, id: &str) -> Result<String, ApiError> {
+async fn refresh_stream_url(state: &BackendState, id: &str) -> Result<StreamSource, ApiError> {
     let fresh = extract_direct_stream_url(state, id).await?;
     state
         .inner
@@ -1408,10 +1684,13 @@ async fn refresh_stream_url(state: &BackendState, id: &str) -> Result<String, Ap
 
 async fn request_upstream_stream(
     state: &BackendState,
-    url: &str,
+    source: &StreamSource,
     incoming_headers: &HeaderMap,
 ) -> Result<reqwest::Response, ApiError> {
-    let mut request = state.inner.http.get(url);
+    let mut request = state.inner.http.get(&source.url);
+    for (name, value) in &source.headers {
+        request = request.header(name, value);
+    }
     if let Some(range) = incoming_headers.get(header::RANGE) {
         request = request.header(reqwest::header::RANGE, range.clone());
     }
@@ -2022,25 +2301,12 @@ fn chunk_text(text: &str, max_chars: usize) -> Vec<String> {
     chunks
 }
 
-fn copy_header(
-    from: &reqwest::header::HeaderMap,
-    to: &mut HeaderMap,
-    source_name: &'static str,
-    target_name: header::HeaderName,
-) {
-    if let Some(value) = from.get(source_name) {
-        if let Ok(value) = HeaderValue::from_bytes(value.as_bytes()) {
-            to.insert(target_name, value);
-        }
-    }
-}
-
-async fn serve_file(path: PathBuf) -> Result<Response, ApiError> {
+async fn serve_file(path: PathBuf, range_header: Option<&str>) -> Result<Response, ApiError> {
     if !path.exists() {
         return Err(ApiError::not_found("File not found"));
     }
 
-    let file = fs::File::open(&path)
+    let mut file = fs::File::open(&path)
         .await
         .map_err(|_| ApiError::not_found("File not found"))?;
     let meta = file
@@ -2048,8 +2314,24 @@ async fn serve_file(path: PathBuf) -> Result<Response, ApiError> {
         .await
         .map_err(|e| ApiError::internal(format!("Cannot read file metadata: {e}")))?;
     let mime = mime_guess::from_path(&path).first_or_octet_stream();
-    let stream = ReaderStream::new(file);
+    let total = meta.len();
+    let Some(requested) = AudioRange::parse(range_header) else { return Ok(file_range_not_satisfiable(total)); };
+    let (start, length) = if requested == AudioRange::Full {
+        (0, total)
+    } else {
+        let Some((start, end)) = requested.bounds(total) else { return Ok(file_range_not_satisfiable(total)); };
+        (start, end - start + 1)
+    };
+    file.seek(SeekFrom::Start(start)).await
+        .map_err(|e| ApiError::internal(format!("Cannot seek audio file: {e}")))?;
+    let stream = ReaderStream::new(file.take(length));
     let mut response = Response::new(Body::from_stream(stream));
+    if requested != AudioRange::Full {
+        *response.status_mut() = StatusCode::PARTIAL_CONTENT;
+        response.headers_mut().insert(header::CONTENT_RANGE, HeaderValue::from_str(&format!("bytes {start}-{}/{total}", start + length - 1)).unwrap());
+    }
+    response.headers_mut().insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
+    response.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
     response.headers_mut().insert(
         header::CONTENT_TYPE,
         HeaderValue::from_str(mime.as_ref())
@@ -2057,9 +2339,98 @@ async fn serve_file(path: PathBuf) -> Result<Response, ApiError> {
     );
     response.headers_mut().insert(
         header::CONTENT_LENGTH,
-        HeaderValue::from_str(&meta.len().to_string()).unwrap_or(HeaderValue::from_static("0")),
+        HeaderValue::from_str(&length.to_string()).unwrap_or(HeaderValue::from_static("0")),
     );
     Ok(response)
+}
+
+fn file_range_not_satisfiable(total: u64) -> Response {
+    let mut response = Response::new(Body::empty());
+    *response.status_mut() = StatusCode::RANGE_NOT_SATISFIABLE;
+    response.headers_mut().insert(header::CONTENT_RANGE, HeaderValue::from_str(&format!("bytes */{total}")).unwrap());
+    response.headers_mut().insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
+    response
+}
+
+#[cfg(test)]
+mod audio_file_tests {
+    use super::*;
+
+    struct AudioFile(PathBuf);
+
+    impl AudioFile {
+        async fn new(name: &str, data: &[u8]) -> Self {
+            let path = env::temp_dir().join(format!("tesify-range-{}-{name}.mp3", std::process::id()));
+            fs::write(&path, data).await.unwrap();
+            Self(path)
+        }
+    }
+
+    impl Drop for AudioFile {
+        fn drop(&mut self) { let _ = std::fs::remove_file(&self.0); }
+    }
+
+    #[tokio::test]
+    async fn downloaded_audio_serves_only_the_requested_bytes() {
+        let data: Vec<u8> = (0..100_000).map(|index| (index % 251) as u8).collect();
+        let file = AudioFile::new("bounded", &data).await;
+        let response = serve_file(file.0.clone(), Some("bytes=65536-65551")).await.unwrap();
+        assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
+        assert_eq!(response.headers()[header::ACCEPT_RANGES], "bytes");
+        assert_eq!(response.headers()[header::CONTENT_RANGE], "bytes 65536-65551/100000");
+        assert_eq!(response.headers()[header::CONTENT_LENGTH], "16");
+        assert_eq!(response.headers()[header::CONTENT_TYPE], "audio/mpeg");
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(body.as_ref(), &data[65_536..65_552]);
+    }
+
+    #[tokio::test]
+    async fn downloaded_audio_supports_open_ended_and_tail_requests() {
+        let data = b"0123456789abcdefghijklmnopqrstuvwxyz";
+        let file = AudioFile::new("tail", data).await;
+        for (range, content_range, expected) in [
+            ("bytes=10-", "bytes 10-35/36", &data[10..]),
+            ("bytes=-5", "bytes 31-35/36", &data[31..]),
+            ("bytes=30-999", "bytes 30-35/36", &data[30..]),
+        ] {
+            let response = serve_file(file.0.clone(), Some(range)).await.unwrap();
+            assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
+            assert_eq!(response.headers()[header::CONTENT_RANGE], content_range);
+            let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            assert_eq!(body.as_ref(), expected);
+        }
+    }
+
+    #[tokio::test]
+    async fn downloaded_audio_returns_full_body_without_a_range() {
+        let data = b"complete audio file";
+        let file = AudioFile::new("full", data).await;
+        let response = serve_file(file.0.clone(), None).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()[header::ACCEPT_RANGES], "bytes");
+        assert!(!response.headers().contains_key(header::CONTENT_RANGE));
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(body.as_ref(), data);
+    }
+
+    #[tokio::test]
+    async fn downloaded_audio_rejects_unavailable_ranges_and_handles_empty_files() {
+        let file = AudioFile::new("invalid", b"audio").await;
+        for range in ["bytes=5-", "bytes=3-2", "bytes=-0", "bytes=0-1,3-4"] {
+            let response = serve_file(file.0.clone(), Some(range)).await.unwrap();
+            assert_eq!(response.status(), StatusCode::RANGE_NOT_SATISFIABLE);
+            assert_eq!(response.headers()[header::CONTENT_RANGE], "bytes */5");
+            assert_eq!(axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap().len(), 0);
+        }
+        let empty = AudioFile::new("empty", b"").await;
+        let response = serve_file(empty.0.clone(), None).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()[header::CONTENT_LENGTH], "0");
+        assert_eq!(axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap().len(), 0);
+        let response = serve_file(empty.0.clone(), Some("bytes=0-")).await.unwrap();
+        assert_eq!(response.status(), StatusCode::RANGE_NOT_SATISFIABLE);
+        assert_eq!(response.headers()[header::CONTENT_RANGE], "bytes */0");
+    }
 }
 
 fn safe_filename(filename: &str) -> Result<&str, ApiError> {
