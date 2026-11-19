@@ -34,9 +34,15 @@ class PlaybackTools(private val host: Activity) : Plugin(host) {
           put("cacheDir", app.cacheDir.absolutePath)
         })
       } catch (error: Exception) {
-        Log.e("TesifyPlayback", "Failed to initialize playback tools", error)
-        invoke.reject("Unable to initialize Android playback tools")
+        reject(invoke, error)
+      } catch (error: LinkageError) {
+        reject(invoke, error)
       }
     }
+  }
+
+  private fun reject(invoke: Invoke, error: Throwable) {
+    Log.e("TesifyPlayback", "Failed to initialize playback tools", error)
+    invoke.reject("Unable to initialize Android playback tools")
   }
 }

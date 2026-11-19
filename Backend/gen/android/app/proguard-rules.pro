@@ -25,3 +25,8 @@
     public <init>(android.app.Activity);
     public void prepare(app.tauri.plugin.Invoke);
 }
+
+# Commons Compress uses these constructors to unpack the embedded Python runtime.
+-keep class * implements org.apache.commons.compress.archivers.zip.ZipExtraField {
+    public <init>();
+}
