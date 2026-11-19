@@ -1,0 +1,36 @@
+.music-loader { display: flex; align-items: center; justify-content: center; color: var(--accent-ink); font-family: "Manrope", "Segoe UI", sans-serif; transition: opacity var(--motion-base) var(--ease-out); }
+.music-loader--page { min-height: 310px; flex-direction: column; gap: 18px; padding: 55px 12px; }
+.music-loader-turntable { position: relative; display: grid; width: 112px; height: 112px; place-items: center; border-radius: 32px; background: var(--surface); }
+.music-loader-record { position: relative; display: grid; width: 82px; height: 82px; place-items: center; border-radius: 50%; background: repeating-radial-gradient(circle at center, #292929 0 1px, #222 1px 3px); box-shadow: 0 5px 12px #2222; animation: record-turn 2.8s linear infinite; }
+.music-loader-record::before { position: absolute; inset: 5px; border: 1px solid #ffffff18; border-right-color: transparent; border-bottom-color: transparent; border-radius: 50%; content: ""; }
+.music-loader-record-label { position: relative; width: 25px; height: 25px; border-radius: 50%; background: var(--control-accent); }
+.music-loader-record-label::before { position: absolute; top: 6px; left: 10px; width: 5px; height: 3px; border-radius: 2px; background: #ffffffa6; content: ""; }
+.music-loader-record-label::after { position: absolute; top: 11px; left: 11px; width: 3px; height: 3px; border-radius: 50%; background: var(--canvas); content: ""; }
+.music-loader-arm { position: absolute; top: 17px; right: 13px; width: 13px; height: 43px; border-top: 4px solid #aaa; border-right: 3px solid #aaa; border-radius: 0 6px 0 0; transform: rotate(27deg); transform-origin: top right; }
+.music-loader-arm::after { position: absolute; right: -4px; bottom: -4px; width: 6px; height: 13px; border-radius: 2px; background: #666; content: ""; }
+.music-loader-bars { display: inline-flex; width: 26px; height: 19px; flex: 0 0 auto; align-items: center; justify-content: center; gap: 3px; color: var(--control-accent); }
+.music-loader-bars > i { width: 3px; height: 100%; border-radius: 3px; background: currentColor; transform: scaleY(.35); animation: music-level 1s var(--ease-in-out) infinite; }
+.music-loader-bars > i:nth-child(2) { animation-delay: -700ms; }
+.music-loader-bars > i:nth-child(3) { animation-delay: -400ms; }
+.music-loader-bars > i:nth-child(4) { animation-delay: -850ms; }
+.music-loader-bars > i:nth-child(5) { animation-delay: -200ms; }
+.music-loader-label { font-size: 12px; line-height: 1.7; }
+.music-loader--page .music-loader-bars { height: 16px; margin-top: 1px; }
+.music-loader--page .music-loader-label { margin-top: -8px; }
+.music-loader--inline { justify-content: flex-start; gap: 12px; }
+.music-loader--compact { display: inline-flex; color: inherit; vertical-align: middle; }
+.music-loader--compact .music-loader-bars { width: 22px; height: 12px; gap: 2px; color: inherit; }
+.music-loader--compact .music-loader-bars > i { width: 2px; }
+.music-loader--spinner { display: inline-flex; color: var(--accent-ink); vertical-align: middle; }
+.music-loader-ring { width: 14px; height: 14px; border: 2px solid color-mix(in srgb, currentColor 25%, transparent); border-top-color: currentColor; border-radius: 50%; animation: record-turn .75s linear infinite; }
+@starting-style { .music-loader { opacity: 0; } }
+@keyframes record-turn { to { transform: rotate(360deg); } }
+@keyframes music-level { 0%, 100% { transform: scaleY(.3); } 50% { transform: scaleY(1); } }
+@keyframes music-breathe { 0%, 100% { opacity: .5; } 50% { opacity: 1; } }
+@media(prefers-reduced-motion: reduce) {
+  .music-loader-record { animation: none; }
+  .music-loader-ring { animation: none; }
+  .music-loader-bars > i { animation: music-breathe 1.6s ease infinite; transform: scaleY(.5); }
+  .music-loader-bars > i:nth-child(2), .music-loader-bars > i:nth-child(4) { transform: scaleY(.8); }
+  .music-loader-bars > i:nth-child(3) { transform: scaleY(1); }
+}

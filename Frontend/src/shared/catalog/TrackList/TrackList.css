@@ -1,0 +1,32 @@
+.catalog-track-list { width: 100%; }
+.catalog-track-list table { width: 100%; border-collapse: collapse; table-layout: fixed; text-align: left; }
+.catalog-track-list th { height: 40px; padding: 0 14px 12px 0; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 11px; font-weight: 400; }
+.catalog-track-list td { height: 66px; padding: 9px 14px 9px 0; color: var(--muted); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.catalog-track-list .catalog-track-number { width: 36px; padding: 0 8px; text-align: center; font-variant-numeric: tabular-nums; }
+.catalog-track-number > svg { display: none; width: 14px; height: 14px; vertical-align: middle; }
+.catalog-track-title { display: flex; min-width: 0; align-items: center; gap: 13px; }
+.catalog-track-title > div { min-width: 0; }
+.catalog-track-cover { position: relative; width: 42px; height: 42px; flex: 0 0 auto; padding: 0; border: 0; border-radius: 7px; background: transparent; cursor: pointer; }
+.catalog-track-cover > .playlist-cover { width: 42px; height: 42px; border-radius: inherit; }
+.catalog-track-cover > svg { position: absolute; inset: 0; width: 100%; height: 100%; padding: 11px; border-radius: inherit; background: #0007; color: white; opacity: 0; }
+.catalog-track-name { display: block; padding: 0; border: 0; background: transparent; color: var(--ink); font: inherit; font-size: 13px; font-weight: 600; line-height: 1.6; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
+.catalog-track-title .catalog-artist-links { display: block; margin-top: 3px; font-size: 10px; }
+.catalog-track-list .catalog-track-time { width: 64px; padding-right: 8px; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.catalog-track-time svg { width: 14px; height: 14px; vertical-align: middle; }
+.catalog-track-album { width: 27%; }
+.catalog-track-plays { width: 20%; font-variant-numeric: tabular-nums; }
+.catalog-track-added { width: 140px; }
+.catalog-inline-link { padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
+.catalog-track-list tr[data-active] { background: var(--accent-soft); }
+.catalog-track-list tr[data-active] .catalog-track-name { color: var(--accent-ink); }
+.catalog-track-list tr[data-active] .catalog-track-index { display: none; }
+.catalog-track-list tr[data-active] .catalog-track-number > svg { color: var(--accent-ink); }
+.catalog-cover-playing { position: absolute; inset: 0; display: grid; place-items: center; border-radius: inherit; background: #0007; }
+.catalog-cover-playing :is(.playback-indicator, .music-loader) { color: var(--accent-on-overlay); }
+.catalog-track-list tr[data-unavailable] .catalog-track-name { color: var(--muted); }
+.catalog-track-list tr[data-unavailable] .catalog-track-cover { opacity: .5; }
+.catalog-track-list button:disabled { cursor: default; }
+.catalog-track-list--compact td { height: 58px; padding-top: 7px; padding-bottom: 7px; }
+@media(hover: hover) and (pointer: fine) { .catalog-track-list tbody tr:hover { background: var(--surface-hover); } .catalog-track-list tr:not([data-unavailable]):hover .catalog-track-index, .catalog-track-list tr:hover .playback-indicator { display: none; } .catalog-track-list tr:not([data-unavailable]):hover .catalog-track-number > svg { display: inline-block; } .catalog-track-list tr:not([data-unavailable]):hover .catalog-track-cover > svg { opacity: 1; } .catalog-track-name:not(:disabled):hover, .catalog-inline-link:hover { text-decoration: underline; } }
+@media(max-width: 1050px) { .catalog-track-album { display: none; } .catalog-track-added { width: 115px; } }
+@media(max-width: 700px) { .catalog-track-plays, .catalog-track-added { display: none; } .catalog-track-title { gap: 9px; } .catalog-track-name { font-size: 11px; } .catalog-track-title .catalog-artist-links { font-size: 9px; } .catalog-track-cover, .catalog-track-cover > .playlist-cover { width: 34px; height: 34px; } .catalog-track-list .catalog-track-number { width: 25px; padding: 0 5px; } .catalog-track-list .catalog-track-time { width: 47px; padding-right: 4px; font-size: 10px; } }

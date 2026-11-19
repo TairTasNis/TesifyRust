@@ -1,0 +1,123 @@
+:root {
+  font-family: "Segoe UI", Arial, sans-serif;
+  color: #272727;
+  background: #1e1e1e;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  --desktop: #1e1e1e;
+  --canvas: #ffffff;
+  --rail: #e4e4e4;
+  --ink: #272727;
+  --muted: #696969;
+  --line: #e3e3e3;
+  --surface: #f3f3f3;
+  --surface-hover: #e9e9e9;
+  --accent-soft: #ededed;
+  --accent-ink: #303030;
+  --nav-active: #191919;
+  --nav-active-ink: #fff;
+  --player-surface: #efefef;
+  --player-progress: #d9d9d9;
+  --control-accent: #4e4e4e;
+  --control-track: #cacaca;
+  --accent-on-overlay: #fff;
+  --error-surface: #fff7f5;
+  --error-line: #efdbd8;
+  --error-ink: #9e3e31;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --motion-fast: 160ms;
+  --motion-base: 200ms;
+  --motion-modal: 240ms;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --desktop: #101010;
+  --canvas: #191919;
+  --rail: #252525;
+  --ink: #ededed;
+  --muted: #adadad;
+  --line: #373737;
+  --surface: #262626;
+  --surface-hover: #323232;
+  --accent-soft: #333;
+  --accent-ink: #ddd;
+  --nav-active: #e3e3e3;
+  --nav-active-ink: #202020;
+  --player-surface: #252525;
+  --player-progress: #424242;
+  --control-accent: #c9c9c9;
+  --control-track: #555;
+  --error-surface: #392624;
+  --error-line: #61413b;
+  --error-ink: #f4b9ad;
+}
+
+:root[data-custom-accent] {
+  --accent-soft: color-mix(in srgb, var(--custom-accent) 15%, var(--surface));
+  --accent-ink: color-mix(in srgb, var(--custom-accent) 40%, var(--ink));
+  --nav-active: var(--custom-accent);
+  --nav-active-ink: var(--custom-accent-contrast);
+  --player-progress: color-mix(in srgb, var(--custom-accent) 28%, var(--player-surface));
+  --control-accent: color-mix(in srgb, var(--custom-accent) 70%, var(--ink));
+  --accent-on-overlay: color-mix(in srgb, var(--custom-accent) 55%, white);
+}
+
+* {
+  box-sizing: border-box;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+*::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+body {
+  min-width: 280px;
+  margin: 0;
+  color: var(--ink);
+}
+
+html[data-desktop="true"],
+html[data-desktop="true"] body {
+  background: transparent;
+}
+
+button {
+  color: inherit;
+  font: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--control-accent);
+  outline-offset: 4px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Keep keyboard shortcuts and repeated keyboard navigation immediate. */
+html[data-input="keyboard"] *,
+html[data-input="keyboard"] *::before,
+html[data-input="keyboard"] *::after {
+  transition: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --motion-fast: 100ms; --motion-base: 100ms; --motion-modal: 100ms; }
+}

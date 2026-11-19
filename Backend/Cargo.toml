@@ -1,0 +1,39 @@
+[package]
+name = "tesify"
+version = "26.11.0-dev.2"
+description = "Tesify music and playlists"
+edition = "2024"
+rust-version = "1.95"
+default-run = "tesify"
+
+[lib]
+name = "tesify_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "=3.0.0-alpha.4", features = [] }
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+tauri = { version = "=3.0.0-alpha.5", features = [] }
+tauri-runtime-wry = { version = "=3.0.0-alpha.5" }
+axum = { version = "0.8", features = ["json"] }
+base64 = "0.22"
+chrono = { version = "0.4", features = ["serde"] }
+dirs = "7"
+dotenvy = "0.15"
+regex = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls", "gzip", "brotli", "stream"] }
+futures-util = "0.3"
+flate2 = "1"
+quick-xml = "0.42"
+unicode-normalization = "0.1"
+serde_json = "1"
+sha2 = "0.10"
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "sync"] }
+uuid = { version = "1", features = ["v4"] }
+
+[profile.release]
+strip = true
+lto = "thin"
+codegen-units = 1

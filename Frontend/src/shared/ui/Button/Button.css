@@ -1,0 +1,32 @@
+.music-button {
+  display: inline-flex;
+  min-height: 43px;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 11px 18px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  font-family: "Manrope", "Segoe UI", sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform var(--motion-fast) var(--ease-out);
+}
+.music-button svg { width: 18px; height: 18px; flex: 0 0 auto; }
+.music-button--primary { background: var(--nav-active); color: var(--nav-active-ink); }
+.music-button--secondary { background: var(--canvas); color: var(--ink); border-color: var(--line); }
+.music-button--ghost { background: transparent; color: var(--muted); }
+.music-button--danger { background: #ad302b; color: white; }
+.music-button:disabled { opacity: .5; cursor: wait; }
+.music-button:focus-visible { outline: 2px solid #1c1c1c; outline-offset: 3px; }
+@media(hover: hover) and (pointer: fine) {
+  .music-button--primary:hover { background: color-mix(in srgb, var(--nav-active) 85%, var(--canvas)); }
+  .music-button--secondary:hover { background: var(--surface); }
+  .music-button--ghost:hover { color: var(--ink); background: var(--surface); }
+}
+@media(prefers-reduced-motion: no-preference) {
+  html:not([data-input="keyboard"]) .music-button:active:not(:disabled) { transform: scale(.97); }
+}

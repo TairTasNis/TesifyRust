@@ -1,0 +1,17 @@
+.settings-page { top: 60px; overflow: auto; padding: 0 24px 32px; font-family: "Manrope", "Segoe UI", sans-serif; }
+.settings-page h1 { margin: 0 0 24px; font-size: clamp(26px, 3vw, 39px); line-height: 1.25; letter-spacing: -.04em; }
+.settings-tabs { display: flex; margin-bottom: 17px; }
+.settings-tabs > button { padding: 8px 15px; border: 0; border-radius: 999px; background: var(--accent-soft); color: var(--accent-ink); font-size: 13px; font-weight: 700; }
+.settings-panel { max-width: 640px; padding-inline: 18px; border: 1px solid var(--line); border-radius: 17px; background: var(--surface); }
+.settings-row { display: flex; min-height: 64px; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding-block: 12px; font-size: 14px; font-weight: 600; }
+.settings-row + .settings-row { border-top: 1px solid var(--line); }
+.settings-row select { max-width: 100%; min-height: 34px; padding: 5px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--canvas); color: var(--ink); font: inherit; cursor: pointer; }
+.settings-row [role="switch"] { position: relative; appearance: none; width: 38px; height: 22px; flex: 0 0 auto; margin: 0; border: 1px solid var(--line); border-radius: 999px; background: var(--rail); cursor: pointer; }
+.settings-row [role="switch"]::after { position: absolute; inset: 3px auto 3px 3px; width: 14px; border-radius: 50%; background: var(--ink); content: ""; transition: transform var(--motion-fast) var(--ease-out); }
+.settings-row [role="switch"]:checked { background: var(--nav-active); border-color: var(--nav-active); }
+.settings-row [role="switch"]:checked::after { background: var(--nav-active-ink); transform: translateX(16px); }
+.settings-color { display: flex; align-items: center; gap: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.settings-color input { width: 42px; height: 32px; padding: 3px; border: 1px solid var(--line); border-radius: 8px; background: var(--canvas); cursor: pointer; }
+.settings-color input::-webkit-color-swatch-wrapper { padding: 0; }
+.settings-color input::-webkit-color-swatch { border: 0; border-radius: 4px; }
+@media (max-width: 600px) { .settings-page { padding-inline: 12px; } .settings-panel { padding-inline: 12px; } }

@@ -1,0 +1,114 @@
+.desktop {
+  position: relative;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 320px;
+  padding: 10px 2px 11px 16px;
+  background: var(--desktop);
+}
+
+.app-window {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 28px;
+  background: var(--canvas);
+}
+
+.desktop--native {
+  padding: 0;
+  background: transparent;
+}
+
+.window-drag-region {
+  position: absolute;
+  top: 0;
+  right: 156px;
+  left: 92px;
+  z-index: 1;
+  height: 20px;
+  user-select: none;
+}
+
+.window-error {
+  position: absolute;
+  right: 24px;
+  bottom: 24px;
+  left: 105px;
+  z-index: 5;
+  width: fit-content;
+  max-width: calc(100% - 129px);
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: #222;
+  color: white;
+  font-size: 13px;
+}
+
+.workspace {
+  position: absolute;
+  inset: 70px 17px 19px 105px;
+}
+
+.workspace, .about-page { transition: opacity var(--motion-fast) var(--ease-out), transform var(--motion-fast) var(--ease-out); }
+@starting-style { .workspace, .about-page { opacity: 0; } }
+@media(prefers-reduced-motion: no-preference) {
+  @starting-style { html:not([data-input="keyboard"]) .workspace, html:not([data-input="keyboard"]) .about-page { transform: translateY(6px); } }
+}
+
+.app-window--with-player .workspace { bottom: 111px; }
+.app-window--with-player .about-page { bottom: 100px; }
+@media(max-width: 700px) { .app-window--with-player .workspace { bottom: 155px; } .app-window--with-player .about-page { bottom: 144px; } }
+@media(max-width: 600px) { .app-window--with-player .sidebar { bottom: 155px; } }
+
+.desktop--maximized {
+  padding: 0;
+}
+
+.desktop--maximized .app-window {
+  border-radius: 0;
+}
+
+.desktop.desktop--lyrics { padding: 0; }
+
+.reopen-button {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  min-height: 56px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 20px 8px 8px;
+  transform: translate(-50%, -50%);
+  border: 0;
+  border-radius: 16px;
+  background: var(--rail);
+  font-size: 14px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.reopen-button--minimized {
+  top: auto;
+  bottom: 20px;
+  transform: translateX(-50%);
+}
+
+.reopen-button:hover {
+  background: var(--surface);
+}
+
+.reopen-logo {
+  display: block;
+  flex: 0 0 auto;
+}
+
+@media (max-width: 600px) {
+  .desktop { padding: 8px; }
+  .app-window { border-radius: 23px; }
+  .workspace { left: 86px; }
+  .desktop--maximized { padding: 0; }
+  .desktop--native { padding: 0; }
+}

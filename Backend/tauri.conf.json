@@ -1,0 +1,40 @@
+{
+  "$schema": "../Frontend/node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "Tesify",
+  "version": "26.11.0-dev.2",
+  "identifier": "app.tesify.desktop",
+  "build": {
+    "frontendDist": "../Frontend/dist",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeDevCommand": { "script": "npm run dev:desktop", "cwd": "../Frontend" },
+    "beforeBuildCommand": { "script": "npm run build", "cwd": "../Frontend" }
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Tesify",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 640,
+        "minHeight": 420,
+        "center": true,
+        "resizable": true,
+        "decorations": false,
+        "transparent": true,
+        "backgroundColor": "#00000000",
+        "shadow": true,
+        "dragDropEnabled": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data: blob: https://i.ibb.co https://i.scdn.co https://t.scdn.co https://*.spotifycdn.com https://mosaic.scdn.co; font-src 'self'; connect-src ipc: http://ipc.localhost; media-src 'self' http://127.0.0.1:*"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "resources": ["tools/yt-dlp.exe", "tools/README.md"],
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"]
+  }
+}

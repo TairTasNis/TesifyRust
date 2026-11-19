@@ -1,0 +1,12 @@
+.import-provider { display: flex; width: 100%; align-items: center; gap: 15px; padding: 17px; border: 1px solid var(--line); border-radius: 13px; background: var(--canvas); color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.import-provider { transition: transform var(--motion-fast) var(--ease-out); }
+@media(hover: hover) and (pointer: fine) { .import-provider:hover { background: var(--canvas); border-color: #b9cebf; } }
+@media(prefers-reduced-motion: no-preference) { html:not([data-input="keyboard"]) .import-provider:active { transform: scale(.98); } }
+.import-step { transition: opacity var(--motion-base) var(--ease-out); }
+@starting-style { .import-step { opacity: 0; } }
+.import-provider-icon { display: grid; width: 47px; height: 47px; flex: 0 0 auto; place-items: center; border-radius: 12px; background: var(--accent-soft); color: #21b85d; }
+.import-provider-icon > svg { width: 29px; height: 29px; }
+.import-provider strong { display: block; font-size: 15px; font-weight: 700; }
+.import-provider small { display: block; margin-top: 5px; color: var(--muted); font-size: 10px; }
+.import-provider > svg { width: 17px; height: 17px; margin-left: auto; color: var(--muted); }
+.import-progress { margin-top: 22px; }

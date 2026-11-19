@@ -1,0 +1,74 @@
+.about-page {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 72px 24px;
+}
+
+.about-page:focus {
+  outline: none;
+}
+
+.about-back-button {
+  position: absolute;
+  z-index: 2;
+  top: 22px;
+  left: 22px;
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: transform var(--motion-fast) var(--ease-out);
+}
+
+.about-back-button:focus-visible {
+  outline-color: var(--ink);
+}
+
+.about-identity {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  transform: translateY(16px);
+  color: var(--ink);
+  text-align: center;
+}
+
+.about-logo {
+  display: block;
+  width: clamp(120px, 11.5vw, 184px);
+  height: auto;
+  aspect-ratio: 1440 / 1320;
+}
+
+.about-name {
+  margin: 14px 0 0;
+  font-family: "Michroma", "Segoe UI", sans-serif;
+  font-size: clamp(23px, 2.3vw, 34px);
+  font-weight: 400;
+  line-height: 1.35;
+  letter-spacing: 0.015em;
+  text-transform: uppercase;
+}
+
+.about-version {
+  margin: 1px 0 0;
+  font-family: "Manrope", "Segoe UI", sans-serif;
+  font-size: clamp(12px, 1.15vw, 16px);
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: 0.025em;
+}
+
+.about-version span {
+  margin-left: 0.25em;
+}
+
+@media(prefers-reduced-motion: no-preference) { html:not([data-input="keyboard"]) .about-back-button:active { transform: translateX(-2px); } }

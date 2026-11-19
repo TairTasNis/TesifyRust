@@ -1,0 +1,16 @@
+.playlist-editor-grid { display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 27px; }
+.playlist-editor-upload { display: flex; width: 160px; height: 160px; flex-direction: column; align-items: center; justify-content: center; gap: 13px; overflow: hidden; padding: 0; border: 1px dashed var(--line); border-radius: 14px; background: var(--surface); color: var(--muted); font: inherit; font-size: 10px; cursor: pointer; }
+.playlist-editor-upload > svg { width: 29px; height: 29px; stroke-width: 1.4; }
+.playlist-editor-upload > img { width: 100%; height: 100%; object-fit: cover; }
+.playlist-editor-upload:disabled { opacity: .6; cursor: wait; }
+.playlist-editor-upload { transition: transform var(--motion-fast) var(--ease-out); }
+.playlist-editor-upload > img { transition: opacity var(--motion-base) var(--ease-out); }
+@starting-style { .playlist-editor-upload > img { opacity: 0; } }
+@media(prefers-reduced-motion: no-preference) { html:not([data-input="keyboard"]) .playlist-editor-upload:active:not(:disabled) { transform: scale(.98); } }
+.playlist-editor-art p { margin: 10px 0 0; color: var(--muted); font-size: 10px; line-height: 1.7; text-align: center; }
+.playlist-editor-remove { display: block; margin: 7px auto 0; padding: 3px; border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 10px; cursor: pointer; }
+.playlist-editor-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-top: 26px; }
+.playlist-editor-import { padding-right: 0; padding-left: 0; font-size: 12px; }
+@media(hover: hover) and (pointer: fine) { .playlist-editor-import:hover { background: transparent; } }
+.playlist-editor-save-actions { display: flex; justify-content: flex-end; gap: 10px; margin-left: auto; }
+@media(max-width: 600px) { .playlist-editor-grid { grid-template-columns: 1fr; gap: 22px; } .playlist-editor-art { display: flex; flex-direction: column; align-items: center; } .playlist-editor-upload { width: 132px; height: 132px; } }

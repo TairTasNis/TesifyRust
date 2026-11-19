@@ -1,0 +1,5 @@
+.catalog-artist-links button { max-width: 100%; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; text-overflow: ellipsis; white-space: inherit; overflow: hidden; vertical-align: bottom; cursor: pointer; }
+.catalog-artist-links button:focus-visible { outline-offset: 1px; }
+.catalog-artist-links button[aria-busy="true"] { cursor: wait; }
+.catalog-artist-links button[data-lookup-error] { text-decoration: underline dotted; }
+@media (hover: hover) and (pointer: fine) { .catalog-artist-links button:hover { text-decoration: underline; } }
