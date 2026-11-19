@@ -25,7 +25,7 @@
   font-size: 13px;
   font-weight: 700;
 }
-.now-playing-close, .now-playing-controls button, .now-playing-volume button {
+.now-playing-close, .now-playing-controls button {
   display: grid;
   place-items: center;
   width: 44px;
@@ -55,7 +55,7 @@
   border-radius: 18px;
   box-shadow: 0 16px 42px #0003;
 }
-.now-playing-cover img, .mini-player-cover img { transition: none; }
+.now-playing-cover img, .mobile-mini-player-cover img { transition: none; }
 .now-playing-panel { width: min(100%, 388px); min-width: 0; text-align: center; }
 .now-playing-identity { width: fit-content; max-width: 100%; margin-inline: auto; }
 .now-playing-identity h1 { margin: 0 0 4px; font-size: clamp(21px, 5vw, 30px); line-height: 1.2; letter-spacing: -.04em; overflow-wrap: anywhere; }
@@ -77,18 +77,14 @@
 .now-playing-play > svg { width: 30px !important; height: 30px !important; }
 .now-playing-play .music-loader { color: inherit; }
 .now-playing-controls .now-playing-lyrics { grid-column: 3; background: var(--surface); }
-.now-playing-volume { display: flex; width: fit-content; align-items: center; margin: 5px auto 0; }
-.now-playing-volume input { width: 90px; accent-color: var(--control-accent); }
-.now-playing-volume svg { width: 17px; height: 17px; }
-.desktop--mobile .now-playing-volume { display: none; }
 .now-playing-error { margin: 12px 0 0; color: var(--error-ink); font-size: 12px; }
-.now-playing-page :is(.now-playing-header, .now-playing-controls, .now-playing-seek, .now-playing-volume, .now-playing-error) { transition: opacity var(--motion-base) var(--ease-out); }
+.now-playing-page :is(.now-playing-header, .now-playing-controls, .now-playing-seek, .now-playing-error) { transition: opacity var(--motion-base) var(--ease-out); }
 .now-playing-page[data-closing] :is(.now-playing-identity, .now-playing-cover) { visibility: hidden; }
-.now-playing-page[data-closing] :is(.now-playing-header, .now-playing-controls, .now-playing-seek, .now-playing-volume, .now-playing-error) { opacity: 0; }
+.now-playing-page[data-closing] :is(.now-playing-header, .now-playing-controls, .now-playing-seek, .now-playing-error) { opacity: 0; }
 .now-playing-page[data-closing] .now-playing-background { transform: translateY(100%); }
 @starting-style {
   html:not([data-input="keyboard"]) .now-playing-background { transform: translateY(100%); }
-  .now-playing-page :is(.now-playing-header, .now-playing-controls, .now-playing-seek, .now-playing-volume) { opacity: 0; }
+  .now-playing-page :is(.now-playing-header, .now-playing-controls, .now-playing-seek) { opacity: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   .now-playing-background, .now-playing-page[data-closing] .now-playing-background { transform: none; }

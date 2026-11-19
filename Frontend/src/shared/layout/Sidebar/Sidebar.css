@@ -98,6 +98,7 @@
   border-radius: 0;
   background: var(--canvas);
 }
+.desktop--mobile .app-window--with-player .sidebar { bottom: 0; }
 .desktop--mobile :is(.brand-button, .navigation-selection) { display: none; }
 .desktop--mobile .navigation {
   display: grid;

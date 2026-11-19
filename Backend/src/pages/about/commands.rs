@@ -1,9 +1,9 @@
 use super::models::AppInfo;
 
 #[tauri::command]
-pub fn get_app_info() -> AppInfo {
+pub fn get_app_info(app: tauri::AppHandle) -> AppInfo {
     AppInfo {
         name: "Tesify",
-        version: env!("CARGO_PKG_VERSION"),
+        version: app.package_info().version.to_string(),
     }
 }

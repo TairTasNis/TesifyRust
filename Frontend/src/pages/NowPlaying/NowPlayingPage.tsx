@@ -45,10 +45,6 @@ export default function NowPlayingPage({ closing, onClose, onLyrics, onOpen }: P
             </div>
             <button type="button" className="now-playing-lyrics" aria-label={t("Показать текст песни")} onClick={onLyrics}><Icon name="lyrics" /></button>
           </div>
-          <div className="now-playing-volume">
-            <button type="button" onClick={player.mute} aria-label={player.volume ? t("Выключить звук") : t("Включить звук")}><Icon name={player.volume ? 'volume' : 'muted'} /></button>
-            <input type="range" min="0" max="1" step=".01" value={player.volume} aria-label={t("Громкость")} onChange={event => player.setVolume(event.currentTarget.valueAsNumber)} />
-          </div>
           {player.error && <p className="now-playing-error" role="alert">{t(player.error.replace(/^PlayEngine: /, ''))}</p>}
         </div>
       </div>

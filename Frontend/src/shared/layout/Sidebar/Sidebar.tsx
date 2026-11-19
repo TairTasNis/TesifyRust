@@ -13,14 +13,15 @@ const navigation: { id: PageId; label: string; icon: IconName }[] = [
 
 type SidebarProps = {
   activePage: PageId
+  mobile: boolean
   onNavigate: (page: PageId) => void
 }
 
-export default function Sidebar({ activePage, onNavigate }: SidebarProps) {
+export default function Sidebar({ activePage, mobile, onNavigate }: SidebarProps) {
   const t = useTranslation()
   const selectedIndex = navigation.findIndex(({ id }) => id === activePage)
   return (
-    <aside className="sidebar">
+    <aside className="sidebar" aria-label={mobile ? undefined : t("Боковая панель")}>
       <button
         className="brand-button"
         aria-label={t("О программе Tesify")}
@@ -41,14 +42,12 @@ export default function Sidebar({ activePage, onNavigate }: SidebarProps) {
             aria-current={activePage === id ? 'page' : undefined}
             onClick={() => onNavigate(id)}
           >
-            <span className="navigation-icon"><Icon name={icon} /></span>
-            <span className="navigation-label">{t(label)}</span>
+            {mobile ? <><span className="navigation-icon"><Icon name={icon} /></span><span className="navigation-label">{t(label)}</span></> : <Icon name={icon} />}
           </button>
         ))}
       </nav>
       <button type="button" className="navigation-button settings-button" aria-label={t("Настройки")} title={t("Настройки")} aria-current={activePage === 'settings' ? 'page' : undefined} onClick={() => onNavigate('settings')}>
-        <span className="navigation-icon"><Icon name="settings" /></span>
-        <span className="navigation-label">{t("Настройки")}</span>
+        {mobile ? <><span className="navigation-icon"><Icon name="settings" /></span><span className="navigation-label">{t("Настройки")}</span></> : <Icon name="settings" />}
       </button>
     </aside>
   )

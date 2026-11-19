@@ -1,5 +1,5 @@
 const parts = {
-  mini: ['.mini-player-cover', '.mini-player-identity'],
+  mini: ['.mobile-mini-player-cover', '.mobile-mini-player-identity'],
   full: ['.now-playing-cover', '.now-playing-identity'],
 }
 

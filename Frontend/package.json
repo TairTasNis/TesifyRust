@@ -1,7 +1,7 @@
 {
   "name": "tesify-frontend",
   "private": true,
-  "version": "26.11.0-dev.3",
+  "version": "26.11.0-dev.2",
   "type": "module",
   "scripts": {
     "test": "node --experimental-strip-types --test src/pages/Playlist/sorting.test.mjs src/pages/Lyrics/timing.test.mjs",

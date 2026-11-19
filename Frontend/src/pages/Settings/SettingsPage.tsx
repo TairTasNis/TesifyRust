@@ -11,7 +11,7 @@ const labels = {
   kk: ['Баптаулар', 'Жалпы', 'Интерфейс тілі', 'Қараңғы тақырып'],
 }
 
-export default function SettingsPage({ onAbout }: { onAbout: () => void }) {
+export default function SettingsPage({ onAbout }: { onAbout?: () => void }) {
   const { language, theme, accentEnabled, accentColor, lyricsMode } = usePreferences()
   const t = useTranslation()
   const [title, general, languageLabel, themeLabel] = labels[language]
@@ -48,6 +48,6 @@ export default function SettingsPage({ onAbout }: { onAbout: () => void }) {
         </select>
       </label>
     </section>
-    <button type="button" className="settings-about" onClick={onAbout}>{t("О программе Tesify")}</button>
+    {onAbout && <button type="button" className="settings-about" onClick={onAbout}>{t("О программе Tesify")}</button>}
   </main>
 }

@@ -1,4 +1,5 @@
 {
+  "version": "26.11.0-dev.4",
   "app": {
     "windows": [
       {
@@ -11,7 +12,7 @@
   "bundle": {
     "resources": [],
     "android": {
-      "versionCode": 261103
+      "versionCode": 261104
     }
   }
 }

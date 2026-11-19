@@ -1,6 +1,7 @@
 import { useTranslation } from '../../preferences/i18n'
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
+import { isTauri } from '@tauri-apps/api/core'
 import { errorMessage } from '../../lib/backend'
 import Button from '../../ui/Button/Button'
 import Icon from '../../ui/Icon/Icon'
@@ -34,7 +35,8 @@ export default function PlaylistEditor({ initial, onClose, onSave, onImport }: P
 
   function chooseFile(selected: File | undefined) {
     if (!selected) return
-    if (selected.type && !['image/png', 'image/jpeg', 'image/webp'].includes(selected.type)) { setError(t("Выберите обложку в формате PNG, JPG или WebP.")); return }
+    const missingAndroidType = !selected.type && isTauri() && /Android/i.test(navigator.userAgent)
+    if (!missingAndroidType && !['image/png', 'image/jpeg', 'image/webp'].includes(selected.type)) { setError(t("Выберите обложку в формате PNG, JPG или WebP.")); return }
     if (selected.size > 8 * 1024 * 1024) { setError(t("Обложка должна быть не больше 8 МБ.")); return }
     setError(null); setFile(selected); uploaded.current = null
   }

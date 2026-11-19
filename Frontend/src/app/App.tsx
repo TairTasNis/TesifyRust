@@ -15,11 +15,12 @@ import SpotifyPlaylistPage from '../pages/SpotifyPlaylist/SpotifyPlaylistPage'
 import SettingsPage from '../pages/Settings/SettingsPage'
 import type { OpenCatalog } from '../shared/catalog/types'
 import AppWindow from '../shared/layout/AppWindow/AppWindow'
-import { useAppWindow } from '../shared/layout/AppWindow/useAppWindow'
+import { useAppWindow, useMobileLayout } from '../shared/layout/AppWindow/useAppWindow'
 import Sidebar from '../shared/layout/Sidebar/Sidebar'
 import { canAnimate, useInputMode } from '../shared/lib/motion'
 import { PlaybackProvider, usePlayback } from '../shared/playback/PlaybackProvider'
 import MiniPlayer from '../shared/playback/MiniPlayer/MiniPlayer'
+import MobileMiniPlayer from '../shared/playback/MiniPlayer/MobileMiniPlayer'
 import { useTranslation } from '../shared/preferences/i18n'
 import { routeFromHash, pageTitles } from './navigation'
 import type { PageId } from './navigation'
@@ -32,6 +33,7 @@ function AppContent() {
   const t = useTranslation()
   useInputMode()
   const appWindow = useAppWindow()
+  const mobile = useMobileLayout(appWindow)
   const player = usePlayback()
   const [route, setRoute] = useState(routeFromHash)
   const [lyricsOpen, setLyricsOpen] = useState(false)
@@ -57,7 +59,7 @@ function AppContent() {
     moving.current.forEach(animation => animation.cancel())
     const finish = () => {
       setPlayerView('closed')
-      document.querySelector<HTMLButtonElement>('.mini-player-open')?.focus({ preventScroll: true })
+      document.querySelector<HTMLButtonElement>('.mobile-mini-player-open')?.focus({ preventScroll: true })
     }
     if (!from) {
       flushSync(() => setPlayerView('closed'))
@@ -88,7 +90,7 @@ function AppContent() {
   }, [resetOverlays])
 
   useEffect(() => {
-    if (playerView !== 'open' || lyricsOpen) return
+    if (!mobile || playerView !== 'open' || lyricsOpen) return
     const keydown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !event.defaultPrevented && !document.querySelector('dialog[open]')) {
         event.preventDefault()
@@ -97,7 +99,7 @@ function AppContent() {
     }
     document.addEventListener('keydown', keydown)
     return () => document.removeEventListener('keydown', keydown)
-  }, [closePlayer, lyricsOpen, playerView])
+  }, [closePlayer, lyricsOpen, mobile, playerView])
 
   useEffect(() => {
     if (!appWindow.isAndroid) return
@@ -145,37 +147,36 @@ function AppContent() {
   }
   const leaveCatalog = () => { if (catalogEnteredFromApp.current) window.history.back(); else navigate('search') }
   const sidebarPage = activePage === 'playlist' ? 'library' : ['artist', 'album', 'spotify-playlist'].includes(activePage) ? 'search' : activePage
-  const overlayOpen = lyricsOpen || playerView !== 'closed'
+  const playerExpanded = mobile && playerView !== 'closed'
+  const overlayOpen = lyricsOpen || playerExpanded
+  const page = activePage === 'about' ? <AboutPage onBack={leaveAbout} /> : <>
+    <Sidebar activePage={sidebarPage} mobile={mobile} onNavigate={navigate} />
+    {activePage === 'home' && <HomePage />}
+    {activePage === 'settings' && <SettingsPage onAbout={mobile ? () => navigate('about') : undefined} />}
+    {activePage === 'search' && <SearchPage onOpen={openCatalog} />}
+    {activePage === 'artist' && <ArtistPage key={route.playlistId} id={route.playlistId ?? ''} onOpen={openCatalog} onBack={leaveCatalog} />}
+    {activePage === 'album' && <AlbumPage key={route.playlistId} id={route.playlistId ?? ''} onOpen={openCatalog} onBack={leaveCatalog} />}
+    {activePage === 'spotify-playlist' && <SpotifyPlaylistPage key={route.playlistId} id={route.playlistId ?? ''} onOpen={openCatalog} onBack={leaveCatalog} />}
+    {activePage === 'library' && <LibraryPage onOpenPlaylist={(id) => navigate('playlist', id)} />}
+    {activePage === 'playlist' && <PlaylistPage key={route.playlistId} playlistId={route.playlistId ?? ''} onBack={() => navigate('library')} onOpen={openCatalog} />}
+  </>
 
   return (
-    <AppWindow appWindow={appWindow} isAbout={activePage === 'about'} hasPlayer={Boolean(player.current)} isLyrics={lyricsOpen} isPlayer={playerView !== 'closed'}>
-      <div style={{ display: 'contents' }} inert={overlayOpen} aria-hidden={overlayOpen || undefined}>
-      {activePage === 'about' ? (
-        <AboutPage onBack={leaveAbout} />
-      ) : (
-        <>
-          <Sidebar activePage={sidebarPage} onNavigate={navigate} />
-          {activePage === 'home' && <HomePage />}
-          {activePage === 'settings' && <SettingsPage onAbout={() => navigate('about')} />}
-          {activePage === 'search' && <SearchPage onOpen={openCatalog} />}
-          {activePage === 'artist' && <ArtistPage key={route.playlistId} id={route.playlistId ?? ''} onOpen={openCatalog} onBack={leaveCatalog} />}
-          {activePage === 'album' && <AlbumPage key={route.playlistId} id={route.playlistId ?? ''} onOpen={openCatalog} onBack={leaveCatalog} />}
-          {activePage === 'spotify-playlist' && <SpotifyPlaylistPage key={route.playlistId} id={route.playlistId ?? ''} onOpen={openCatalog} onBack={leaveCatalog} />}
-          {activePage === 'library' && <LibraryPage onOpenPlaylist={(id) => navigate('playlist', id)} />}
-          {activePage === 'playlist' && <PlaylistPage key={route.playlistId} playlistId={route.playlistId ?? ''} onBack={() => navigate('library')} onOpen={openCatalog} />}
-        </>
-      )}
-      </div>
+    <AppWindow appWindow={appWindow} isAbout={activePage === 'about'} hasPlayer={Boolean(player.current)} isLyrics={lyricsOpen} isPlayer={playerExpanded} mobile={mobile}>
+      {mobile ? <div style={{ display: 'contents' }} inert={overlayOpen} aria-hidden={overlayOpen || undefined}>{page}</div> : page}
       {lyricsOpen && player.current && (
         <LyricsPage
           onClose={closeLyrics}
+          mobile={mobile}
           isMaximized={appWindow.isMaximized}
-          onToggleMaximize={appWindow.isAndroid ? undefined : appWindow.toggleMaximize}
+          onToggleMaximize={mobile ? undefined : appWindow.toggleMaximize}
         />
       )}
-      {!lyricsOpen && playerView !== 'closed' && <NowPlayingPage closing={playerView === 'closing'} onClose={closePlayer}
+      {!lyricsOpen && playerExpanded && <NowPlayingPage closing={playerView === 'closing'} onClose={closePlayer}
         onLyrics={() => setLyricsOpen(true)} onOpen={openCatalog} />}
-      <MiniPlayer lyricsOpen={lyricsOpen} expanded={!lyricsOpen && playerView === 'open'} onOpen={openPlayer} />
+      {mobile
+        ? <MobileMiniPlayer lyricsOpen={lyricsOpen} expanded={!lyricsOpen && playerView === 'open'} onOpen={openPlayer} />
+        : <MiniPlayer lyricsOpen={lyricsOpen} onToggleLyrics={() => setLyricsOpen(open => !open)} onOpen={openCatalog} />}
     </AppWindow>
   )
 }

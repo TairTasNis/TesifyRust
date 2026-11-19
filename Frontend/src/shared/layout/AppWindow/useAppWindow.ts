@@ -1,8 +1,20 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { isTauri } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 
 type WindowState = 'open' | 'minimized' | 'closed'
+
+const compactViewport = matchMedia('(max-width: 639px), (pointer: coarse) and (max-width: 1024px)')
+const isCompact = () => compactViewport.matches
+const subscribeViewport = (update: () => void) => {
+  compactViewport.addEventListener('change', update)
+  return () => compactViewport.removeEventListener('change', update)
+}
+
+export function useMobileLayout({ isAndroid, isNative }: { isAndroid: boolean; isNative: boolean }) {
+  const compact = useSyncExternalStore(subscribeViewport, isCompact)
+  return isAndroid || (!isNative && compact)
+}
 
 export function useAppWindow() {
   const isAndroid = isTauri() && /Android/i.test(navigator.userAgent)

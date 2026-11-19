@@ -21,6 +21,9 @@ pub async fn upload_cover(
     services: &AppServices,
     input: CoverUpload,
 ) -> Result<UploadedCover, String> {
+    let key = services.imgbb_api_key.as_deref();
+    #[cfg(not(target_os = "android"))]
+    let key = key.ok_or("Добавьте IMGBB_API_KEY в .env для загрузки обложек.")?;
     if input.image_base64.len() > (MAX_BYTES * 4 / 3 + 8) {
         return Err("Обложка должна быть не больше 8 МБ.".into());
     }
@@ -32,11 +35,9 @@ pub async fn upload_cover(
     }
     let (mime, extension) = image_type(&bytes).ok_or("Выберите изображение PNG, JPG или WebP.")?;
     #[cfg(target_os = "android")]
-    if services.imgbb_api_key.is_none() {
+    let Some(key) = key else {
         return Ok(UploadedCover { url: format!("data:{mime};base64,{}", STANDARD.encode(bytes)) });
-    }
-    let key = services.imgbb_api_key.as_deref()
-        .ok_or("Добавьте IMGBB_API_KEY в .env для загрузки обложек.")?;
+    };
     let stem: String = input
         .file_name
         .rsplit_once('.')
