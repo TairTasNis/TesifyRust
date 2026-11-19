@@ -5,10 +5,20 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .runtime(tauri_runtime_wry::Wry::default())
+    let builder = tauri::Builder::default().runtime(tauri_runtime_wry::Wry::default());
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(shared::playback::android::init());
+    builder
         .setup(|app| {
-            let services = shared::services::AppServices::new(shared::config::Config::load()?)?;
+            #[cfg(target_os = "android")]
+            let config = shared::config::Config::load_with_data_dir(Some(app.path().app_data_dir()?))?;
+            #[cfg(not(target_os = "android"))]
+            let config = shared::config::Config::load()?;
+            let services = shared::services::AppServices::new(
+                config,
+                #[cfg(target_os = "android")]
+                app.state::<shared::playback::android::AndroidTools>().inner().clone(),
+            )?;
             app.manage(services);
             Ok(())
         })

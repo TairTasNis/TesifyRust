@@ -253,3 +253,29 @@
   }
 }
 
+.desktop--mobile .mini-player {
+  left: calc(8px + env(safe-area-inset-left, 0px));
+  right: calc(8px + env(safe-area-inset-right, 0px));
+  bottom: calc(var(--mobile-nav-height) + 6px);
+  height: var(--mobile-player-height);
+  border-radius: 14px;
+}
+.desktop--mobile :is(.app-window--about, .app-window--lyrics) .mini-player {
+  bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+}
+.desktop--mobile .mini-player-content {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-rows: 1fr;
+  gap: 4px;
+  padding: 7px;
+}
+.desktop--mobile .mini-player-track { grid-area: 1 / 1; gap: 7px; padding: 0; }
+.desktop--mobile .mini-player-track > .playlist-cover { width: 38px; height: 38px; }
+.desktop--mobile .mini-player-transport { grid-area: 1 / 2; min-width: 0; gap: 0; }
+.desktop--mobile .mini-player-controls { gap: 0; }
+.desktop--mobile .player-button { width: 44px; height: 44px; }
+.desktop--mobile .mini-player-volume { display: none; }
+.desktop--mobile .mini-player-lyrics { grid-area: 1 / 3; position: static; }
+.desktop--mobile .mini-player[data-lyrics] .mini-player-content { gap: 4px; padding: 7px; }
+.desktop--mobile .mini-player-dock--lyrics { height: calc(var(--mobile-player-height) + 16px + env(safe-area-inset-bottom, 0px)); }
+.desktop--mobile .mini-player-peek-handle { bottom: calc(4px + env(safe-area-inset-bottom, 0px)); min-height: 44px; }

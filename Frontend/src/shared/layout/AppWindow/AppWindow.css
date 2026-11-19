@@ -112,3 +112,18 @@
   .desktop--maximized { padding: 0; }
   .desktop--native { padding: 0; }
 }
+
+.desktop.desktop--mobile { min-height: 0; padding: 0; background: var(--canvas); }
+.desktop--mobile .app-window {
+  --mobile-nav-height: calc(62px + env(safe-area-inset-bottom, 0px));
+  --mobile-player-height: 76px;
+  border-radius: 0;
+}
+.desktop--mobile .workspace {
+  top: env(safe-area-inset-top, 0px);
+  right: env(safe-area-inset-right, 0px);
+  bottom: var(--mobile-nav-height);
+  left: env(safe-area-inset-left, 0px);
+}
+.desktop--mobile .app-window--with-player .workspace { bottom: calc(var(--mobile-nav-height) + var(--mobile-player-height) + 12px); }
+.desktop--mobile .app-window--with-player .about-page { bottom: calc(var(--mobile-player-height) + 12px + env(safe-area-inset-bottom, 0px)); }

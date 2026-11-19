@@ -4,7 +4,8 @@ dist/
 .DS_Store
 Thumbs.db
 target/
-Backend/gen/
+Backend/gen/*
+!Backend/gen/android/
 .tauri-template/
 .env
 .env.*

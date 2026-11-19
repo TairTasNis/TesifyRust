@@ -1,0 +1,17 @@
+{
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Tesify",
+        "useHttpsScheme": false
+      }
+    ]
+  },
+  "bundle": {
+    "resources": [],
+    "android": {
+      "versionCode": 261102
+    }
+  }
+}

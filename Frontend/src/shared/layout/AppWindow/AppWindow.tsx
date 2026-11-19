@@ -1,9 +1,17 @@
 import { useTranslation } from '../../preferences/i18n'
+import { useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
 import Logo from '../../ui/Logo/Logo'
 import WindowControls from '../WindowControls/WindowControls'
 import { useAppWindow } from './useAppWindow'
 import './AppWindow.css'
+
+const compactViewport = matchMedia('(max-width: 639px), (pointer: coarse) and (max-width: 1024px)')
+const isCompact = () => compactViewport.matches
+const subscribeViewport = (update: () => void) => {
+  compactViewport.addEventListener('change', update)
+  return () => compactViewport.removeEventListener('change', update)
+}
 
 type AppWindowProps = {
   children: ReactNode
@@ -17,9 +25,12 @@ export default function AppWindow({ children, isAbout, hasPlayer = false, isLyri
   const t = useTranslation()
   const localWindow = useAppWindow()
   const window = appWindow ?? localWindow
+  const compact = useSyncExternalStore(subscribeViewport, isCompact)
+  const mobile = window.isAndroid || (!window.isNative && compact)
   const classes = [
     'desktop',
     isLyrics && 'desktop--lyrics',
+    mobile && 'desktop--mobile',
     window.isNative && 'desktop--native',
     window.isMaximized && window.windowState === 'open' && 'desktop--maximized',
   ].filter(Boolean).join(' ')
@@ -27,10 +38,10 @@ export default function AppWindow({ children, isAbout, hasPlayer = false, isLyri
   return (
     <div className={classes}>
       {window.windowState === 'open' ? (
-        <div className={`app-window${hasPlayer ? ' app-window--with-player' : ''}${isLyrics ? ' app-window--lyrics' : ''}`}>
-          {window.isNative && !isLyrics && <div className="window-drag-region" data-tauri-drag-region aria-hidden="true" />}
+        <div className={`app-window${hasPlayer ? ' app-window--with-player' : ''}${isLyrics ? ' app-window--lyrics' : ''}${isAbout ? ' app-window--about' : ''}`}>
+          {window.isNative && !window.isAndroid && !isLyrics && <div className="window-drag-region" data-tauri-drag-region aria-hidden="true" />}
           {children}
-          {!isLyrics && (!isAbout || window.isNative) && (
+          {!mobile && !isLyrics && (!isAbout || window.isNative) && (
             <WindowControls
               isMaximized={window.isMaximized}
               onMinimize={window.minimize}

@@ -96,6 +96,7 @@ export default function LyricsToolbar({ appearance, onChange, onChooseTrack }: {
     <button ref={handle} type="button" className="lyrics-tools-handle" aria-label={t("Настройки текста")} title={t("Настройки текста")}
       aria-expanded={open} aria-controls="lyrics-appearance" onClick={() => setExpanded(value => !value)}>
       <span aria-hidden="true" />
+      <Icon name="settings" />
     </button>
     <div id="lyrics-appearance" className="lyrics-tool-panel" role="group" aria-label={t("Настройки текста")} inert={!open}
       onFocus={() => { if (document.documentElement.dataset.input === 'keyboard') setExpanded(true) }}>

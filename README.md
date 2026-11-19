@@ -31,6 +31,20 @@ npm run desktop:dev
 
 Используются зафиксированные версии Tauri 3.0.0-alpha.5, Wry runtime 3.0.0-alpha.5, CLI 3.0.0-alpha.5 и JavaScript API 3.0.0-alpha.3. Это предварительный выпуск Tauri v3; [официальные релизы](https://github.com/tauri-apps/tauri/releases).
 
+## Android
+
+Android использует общий интерфейс React и серверную часть Rust. Проект Gradle находится в `Backend/gen/android/`. Вкладки находятся внизу, а мини-плеер располагается над ними. Библиотека и кэш хранятся в папке данных приложения.
+
+В APK включены Python и QuickJS из [youtubedl-android](https://github.com/yausername/youtubedl-android) и официальный архив [yt-dlp 2026.08.19](https://github.com/yt-dlp/yt-dlp/releases/tag/2026.08.19). Контрольная сумма архива SHA-256 `1fa6733c37ea6fb51c99ad8fe785e7b7e5f3246c9b980230329d4fb72ed8d4d6`.
+
+Для сборки нужны Android SDK с платформой 36, NDK 28+, JDK 17+ и цели Rust `aarch64-linux-android` и `x86_64-linux-android`. Настройте `ANDROID_HOME` и `JAVA_HOME`.
+
+```powershell
+npm run android:build
+```
+
+APK для Android 7.0+ и архитектур ARM64 и x86-64 находится в `Backend/gen/android/app/build/outputs/apk/universal/release/`. Перед установкой подпишите его через `apksigner` своим ключом. Для обновлений используйте тот же ключ.
+
 ## Просмотр в браузере
 
 ```powershell

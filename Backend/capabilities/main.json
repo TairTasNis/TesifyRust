@@ -2,6 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main-window",
   "description": "Управление основным окном Tesify",
+  "platforms": ["windows", "linux", "macOS"],
   "windows": ["main"],
   "permissions": [
     "core:default",

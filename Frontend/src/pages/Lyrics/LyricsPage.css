@@ -92,4 +92,7 @@
 .lyrics-layout[data-cover="false"] .lyrics-now-playing { display: grid; grid-template-columns: 1fr; max-width: none; justify-items: center; gap: 7px; padding: 0; text-align: center; }
 .lyrics-layout[data-cover="false"] .lyrics-track-info, .lyrics-layout[data-cover="false"] .lyrics-credit { grid-column: 1; margin-top: 0; }
 .lyrics-layout[data-cover="false"] .lyrics-state { align-items: center; text-align: center; }
+.desktop--mobile .lyrics-header { top: calc(8px + env(safe-area-inset-top, 0px)); }
+.desktop--mobile .lyrics-icon-button { width: 44px; height: 44px; }
+.desktop--mobile .lyrics-layout { padding-bottom: calc(var(--mobile-player-height) + 18px + env(safe-area-inset-bottom, 0px)); }
 @media (prefers-reduced-motion: reduce) { .lyrics-line { transition: none; } .lyrics-line-content { transform: none; filter: none; transition: opacity 100ms ease; } .lyrics-word { transform: none !important; transition: none; } .lyrics-background-orbit { will-change: auto; } .lyrics-page { filter: none !important; transform: none !important; } }

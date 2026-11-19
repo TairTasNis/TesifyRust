@@ -45,6 +45,8 @@ pub struct PlayEngine {
     search_limit: usize,
     timeout: Duration,
     js_runtime: String,
+    #[cfg(target_os = "android")]
+    android: Option<super::android::AndroidRuntime>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -147,6 +149,8 @@ impl Default for PlayEngine {
             search_limit: 40,
             timeout: Duration::from_secs(45),
             js_runtime: default_js_runtime(),
+            #[cfg(target_os = "android")]
+            android: None,
         }
     }
 }
@@ -211,7 +215,30 @@ impl PlayEngine {
         self
     }
 
+    #[cfg(target_os = "android")]
+    pub(super) fn with_android_runtime(mut self, runtime: super::android::AndroidRuntime) -> Self {
+        self.js_runtime = format!("quickjs:{}", runtime.quick_js.display());
+        self.android = Some(runtime);
+        self
+    }
+
     fn command(&self) -> Command {
+        #[cfg(target_os = "android")]
+        let mut command = match &self.android {
+            Some(runtime) => {
+                let mut command = Command::new(&runtime.python);
+                command.arg(&runtime.yt_dlp)
+                    .env("LD_LIBRARY_PATH", runtime.python_home.join("lib"))
+                    .env("SSL_CERT_FILE", runtime.python_home.join("etc/tls/cert.pem"))
+                    .env("PYTHONHOME", &runtime.python_home)
+                    .env("HOME", &runtime.cache_dir)
+                    .env("TMPDIR", &runtime.cache_dir)
+                    .arg("--cache-dir").arg(runtime.cache_dir.join("yt-dlp"));
+                command
+            }
+            None => Command::new(&self.yt_dlp),
+        };
+        #[cfg(not(target_os = "android"))]
         let mut command = Command::new(&self.yt_dlp);
         // HTTPS audio is streamed as-is. Do not look for FFmpeg or implicit JS runtimes.
         command.args(["--ignore-config", "--no-plugin-dirs", "--ffmpeg-location", "", "--no-js-runtimes"]);

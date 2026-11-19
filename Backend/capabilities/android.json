@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/android-schema.json",
+  "identifier": "android-window",
+  "description": "Основное окно Tesify на Android",
+  "platforms": ["android"],
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

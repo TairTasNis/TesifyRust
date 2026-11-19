@@ -1,4 +1,6 @@
 mod audio_range;
+#[cfg(target_os = "android")]
+pub(crate) mod android;
 pub mod commands;
 mod intro_cache;
 pub mod play_engine;
@@ -45,6 +47,8 @@ pub struct PlaybackSource {
 
 pub struct PlaybackService {
     engine: PlayEngine,
+    #[cfg(target_os = "android")]
+    android_tools: android::AndroidTools,
     client: reqwest::Client,
     sources: Mutex<HashMap<String, SourceEntry>>,
     flights: Mutex<HashMap<String, Weak<AsyncMutex<()>>>>,
@@ -58,6 +62,7 @@ impl PlaybackService {
         client: reqwest::Client,
         engine: PlayEngine,
         cache_dir: PathBuf,
+        #[cfg(target_os = "android")] android_tools: android::AndroidTools,
     ) -> Result<Arc<Self>, String> {
         let listener = std::net::TcpListener::bind("127.0.0.1:0")
             .map_err(|_| "Не удалось запустить сервис воспроизведения.".to_string())?;
@@ -70,6 +75,8 @@ impl PlaybackService {
             .port();
         let service = Arc::new(Self {
             engine,
+            #[cfg(target_os = "android")]
+            android_tools,
             client,
             sources: Mutex::new(HashMap::new()),
             flights: Mutex::new(HashMap::new()),
@@ -132,7 +139,7 @@ impl PlaybackService {
                 .acquire_owned()
                 .await
                 .map_err(|_| "Плеер недоступен.".to_string())?;
-            let engine = self.engine.clone();
+            let engine = self.engine().await?;
             tauri::async_runtime::spawn_blocking(move || {
                 let _permit = permit;
                 let artist = track
@@ -348,7 +355,7 @@ impl PlaybackService {
                 return Ok(current.source);
             }
         }
-        let engine = self.engine.clone();
+        let engine = self.engine().await?;
         let video = entry.video.clone();
         let source = tauri::async_runtime::spawn_blocking(move || {
             engine.audio_source(&video).map_err(engine_error)
@@ -373,6 +380,13 @@ impl PlaybackService {
             }
         }
         Ok(source)
+    }
+
+    async fn engine(&self) -> Result<PlayEngine, String> {
+        let engine = self.engine.clone();
+        #[cfg(target_os = "android")]
+        let engine = engine.with_android_runtime(self.android_tools.runtime().await?.clone());
+        Ok(engine)
     }
 }
 

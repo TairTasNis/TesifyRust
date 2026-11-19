@@ -17,7 +17,10 @@ pub struct AppServices {
 }
 
 impl AppServices {
-    pub fn new(config: Config) -> Result<Self, String> {
+    pub fn new(
+        config: Config,
+        #[cfg(target_os = "android")] tools: super::playback::android::AndroidTools,
+    ) -> Result<Self, String> {
         let http = reqwest::Client::builder()
             .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/148.0.0.0 Safari/537.36")
             .timeout(Duration::from_secs(35)).connect_timeout(Duration::from_secs(12))
@@ -33,6 +36,8 @@ impl AppServices {
             http.clone(),
             engine,
             config.data_dir.join("audio-intros-v1"),
+            #[cfg(target_os = "android")]
+            tools,
         )?;
         Ok(Self {
             lyrics: crate::pages::lyrics::service::LyricsService::with_cache(

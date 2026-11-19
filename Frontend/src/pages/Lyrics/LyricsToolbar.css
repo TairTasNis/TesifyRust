@@ -3,6 +3,7 @@
 .lyrics-page .lyrics-tools-handle:focus-visible { outline-offset: -2px; }
 .lyrics-tools-handle > span { width: 46px; height: 4px; border-radius: 999px; background: #ffffff72; box-shadow: 0 1px 6px #0007; transition: background var(--motion-fast) ease; }
 .lyrics-tools-dock[data-open="true"] .lyrics-tools-handle > span { background: var(--accent-on-overlay); }
+.lyrics-tools-handle > svg { display: none; }
 .lyrics-tool-panel {
   position: absolute;
   top: 100%;
@@ -48,3 +49,9 @@
 @media (max-width: 600px) { .lyrics-tool-panel { gap: 8px 12px; padding-inline: 12px; } }
 @media (max-width: 380px) { .lyrics-tool-scale { width: 126px; } }
 @media (prefers-reduced-motion: reduce) { .lyrics-tool-panel { transform: none; transition-property: opacity; } }
+
+.desktop--mobile .lyrics-tools-dock { top: calc(8px + env(safe-area-inset-top, 0px)); }
+.desktop--mobile .lyrics-tools-handle { width: 44px; height: 44px; background: #0005; color: white; }
+.desktop--mobile .lyrics-tools-handle > span { display: none; }
+.desktop--mobile .lyrics-tools-handle > svg { display: block; width: 20px; height: 20px; }
+.desktop--mobile .lyrics-tool-panel :is(select, input[type="range"], button) { min-height: 40px; }

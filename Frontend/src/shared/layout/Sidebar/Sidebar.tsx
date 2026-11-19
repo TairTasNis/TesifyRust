@@ -20,7 +20,7 @@ export default function Sidebar({ activePage, onNavigate }: SidebarProps) {
   const t = useTranslation()
   const selectedIndex = navigation.findIndex(({ id }) => id === activePage)
   return (
-    <aside className="sidebar" aria-label={t("Боковая панель")}>
+    <aside className="sidebar">
       <button
         className="brand-button"
         aria-label={t("О программе Tesify")}
@@ -41,12 +41,14 @@ export default function Sidebar({ activePage, onNavigate }: SidebarProps) {
             aria-current={activePage === id ? 'page' : undefined}
             onClick={() => onNavigate(id)}
           >
-            <Icon name={icon} />
+            <span className="navigation-icon"><Icon name={icon} /></span>
+            <span className="navigation-label">{t(label)}</span>
           </button>
         ))}
       </nav>
       <button type="button" className="navigation-button settings-button" aria-label={t("Настройки")} title={t("Настройки")} aria-current={activePage === 'settings' ? 'page' : undefined} onClick={() => onNavigate('settings')}>
-        <Icon name="settings" />
+        <span className="navigation-icon"><Icon name="settings" /></span>
+        <span className="navigation-label">{t("Настройки")}</span>
       </button>
     </aside>
   )

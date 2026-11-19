@@ -5,6 +5,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 type WindowState = 'open' | 'minimized' | 'closed'
 
 export function useAppWindow() {
+  const isAndroid = isTauri() && /Android/i.test(navigator.userAgent)
   const isNative = isTauri()
   const [windowState, setWindowState] = useState<WindowState>('open')
   const [isMaximized, setIsMaximized] = useState(false)
@@ -21,7 +22,7 @@ export function useAppWindow() {
   }, [])
 
   useEffect(() => {
-    if (!isNative) return
+    if (!isNative || isAndroid) return
 
     document.documentElement.dataset.desktop = 'true'
     let disposed = false
@@ -45,7 +46,7 @@ export function useAppWindow() {
       delete document.documentElement.dataset.desktop
       void listener.then((unlisten) => unlisten()).catch(() => {})
     }
-  }, [isNative, runNative])
+  }, [isNative, isAndroid, runNative])
 
   function minimize() {
     if (isNative) void runNative(() => getCurrentWindow().minimize())
@@ -68,7 +69,7 @@ export function useAppWindow() {
   }
 
   return {
-    isNative, windowState, isMaximized, windowError,
+    isNative, isAndroid, windowState, isMaximized, windowError,
     minimize, toggleMaximize, close,
     reopen: () => setWindowState('open'),
   }

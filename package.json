@@ -10,6 +10,7 @@
     "build": "npm --prefix Frontend run build",
     "desktop:dev": "node scripts/desktop.mjs dev",
     "desktop:build": "node scripts/desktop.mjs build",
+    "android:build": "node scripts/desktop.mjs android build --apk --target aarch64 x86_64",
     "desktop:info": "node scripts/desktop.mjs info",
     "desktop:check": "cargo check --manifest-path Backend/Cargo.toml --locked",
     "tauri": "node scripts/desktop.mjs"

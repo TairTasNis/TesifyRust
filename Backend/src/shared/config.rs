@@ -10,6 +10,10 @@ pub struct Config {
 
 impl Config {
     pub fn load() -> Result<Self, String> {
+        Self::load_with_data_dir(dirs::data_dir().map(|path| path.join("app.tesify.desktop")))
+    }
+
+    pub fn load_with_data_dir(default_data_dir: Option<PathBuf>) -> Result<Self, String> {
         let mut values = HashMap::new();
         let mut paths = vec![PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.env")];
         if let Ok(exe) = std::env::current_exe() {
@@ -17,8 +21,8 @@ impl Config {
                 paths.push(parent.join(".env"));
             }
         }
-        if let Some(data) = dirs::data_dir() {
-            paths.push(data.join("app.tesify.desktop/.env"));
+        if let Some(data) = &default_data_dir {
+            paths.push(data.join(".env"));
         }
         if let Some(path) = std::env::var_os("TESIFY_ENV_FILE") {
             paths.push(path.into());
@@ -42,7 +46,7 @@ impl Config {
         let data_dir = setting("TESIFY_DATA_DIR")
             .filter(|path| !path.trim().is_empty())
             .map(PathBuf::from)
-            .or_else(|| dirs::data_dir().map(|path| path.join("app.tesify.desktop")))
+            .or(default_data_dir)
             .ok_or_else(|| "Не удалось найти папку данных приложения.".to_string())?;
         Ok(Self {
             imgbb_api_key: setting("IMGBB_API_KEY").filter(|key| !key.trim().is_empty()),

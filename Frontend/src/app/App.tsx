@@ -50,6 +50,22 @@ function AppContent() {
   }, [])
 
   useEffect(() => {
+    if (!appWindow.isAndroid) return
+    const back = (event: Event) => {
+      const dialog = document.querySelector<HTMLDialogElement>('dialog[open]')
+      if (dialog) {
+        event.preventDefault()
+        dialog.dispatchEvent(new Event('cancel', { bubbles: true, cancelable: true }))
+      } else if (lyricsOpen) {
+        event.preventDefault()
+        document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      }
+    }
+    window.addEventListener('tesify:back', back)
+    return () => window.removeEventListener('tesify:back', back)
+  }, [appWindow.isAndroid, lyricsOpen])
+
+  useEffect(() => {
     document.title = `Tesify — ${t(pageTitles[activePage])}`
   }, [activePage, t])
 
@@ -83,7 +99,7 @@ function AppContent() {
         <>
           <Sidebar activePage={sidebarPage} onNavigate={navigate} />
           {activePage === 'home' && <HomePage />}
-          {activePage === 'settings' && <SettingsPage />}
+          {activePage === 'settings' && <SettingsPage onAbout={() => navigate('about')} />}
           {activePage === 'search' && <SearchPage onOpen={openCatalog} />}
           {activePage === 'artist' && <ArtistPage key={route.playlistId} id={route.playlistId ?? ''} onOpen={openCatalog} onBack={leaveCatalog} />}
           {activePage === 'album' && <AlbumPage key={route.playlistId} id={route.playlistId ?? ''} onOpen={openCatalog} onBack={leaveCatalog} />}
@@ -97,7 +113,7 @@ function AppContent() {
         <LyricsPage
           onClose={closeLyrics}
           isMaximized={appWindow.isMaximized}
-          onToggleMaximize={appWindow.toggleMaximize}
+          onToggleMaximize={appWindow.isAndroid ? undefined : appWindow.toggleMaximize}
         />
       )}
       <MiniPlayer lyricsOpen={lyricsOpen} onToggleLyrics={() => setLyricsOpen(open => !open)} onOpen={openCatalog} />
