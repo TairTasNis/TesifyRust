@@ -1,6 +1,8 @@
 import { useTranslation } from '../../shared/preferences/i18n'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
+import Button from '../../shared/ui/Button/Button'
 import Icon from '../../shared/ui/Icon/Icon'
+import Modal from '../../shared/ui/Modal/Modal'
 import './LyricsToolbar.css'
 
 const fonts = {
@@ -48,86 +50,38 @@ export function useLyricsAppearance() {
   return { appearance, setAppearance, style }
 }
 
-export default function LyricsToolbar({ appearance, onChange, onChooseTrack }: {
-  appearance: Appearance; onChange: (value: Appearance) => void; onChooseTrack: () => void
+export default function LyricsToolbar({ appearance, onChange, onClose, onChooseTrack }: {
+  appearance: Appearance; onChange: (value: Appearance) => void; onClose: () => void; onChooseTrack: () => void
 }) {
   const t = useTranslation()
-  const dock = useRef<HTMLDivElement>(null)
-  const handle = useRef<HTMLButtonElement>(null)
-  const [hovered, setHovered] = useState(false)
-  const [expanded, setExpanded] = useState(false)
-  const open = hovered || expanded
 
-  useEffect(() => {
-    if (!open) return
-    const outside = (event: PointerEvent) => {
-      if (event.target instanceof Node && !dock.current?.contains(event.target)) {
-        setHovered(false)
-        setExpanded(false)
-      }
-    }
-    const close = () => { setHovered(false); setExpanded(false) }
-    document.addEventListener('pointerdown', outside)
-    window.addEventListener('blur', close)
-    return () => {
-      document.removeEventListener('pointerdown', outside)
-      window.removeEventListener('blur', close)
-    }
-  }, [open])
-
-  return <div ref={dock} className="lyrics-tools-dock" data-open={open}
-    onPointerEnter={event => { if (event.pointerType === 'mouse') setHovered(true) }}
-    onPointerLeave={event => {
-      if (event.pointerType === 'mouse') {
-        setHovered(false)
-        if (document.documentElement.dataset.input !== 'keyboard') setExpanded(false)
-      }
-    }}
-    onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setExpanded(false) }}
-    onKeyDown={event => {
-      if (event.key === 'Escape' && open) {
-        event.preventDefault()
-        event.stopPropagation()
-        setHovered(false)
-        setExpanded(false)
-        handle.current?.focus()
-      }
-    }}>
-    <button ref={handle} type="button" className="lyrics-tools-handle" aria-label={t("Настройки текста")} title={t("Настройки текста")}
-      aria-expanded={open} aria-controls="lyrics-appearance" onClick={() => setExpanded(value => !value)}>
-      <span aria-hidden="true" />
-      <Icon name="settings" />
-    </button>
-    <div id="lyrics-appearance" className="lyrics-tool-panel" role="group" aria-label={t("Настройки текста")} inert={!open}
-      onFocus={() => { if (document.documentElement.dataset.input === 'keyboard') setExpanded(true) }}>
+  return <Modal title={t("Настройки текста")} onClose={onClose}>
+    <div className="lyrics-tool-panel">
       <label className="lyrics-tool-scale">
         <span>{t("Масштаб текста")} <output>{appearance.textScale}%</output></span>
-        <input type="range" min="70" max="150" step="5" value={appearance.textScale} aria-label={t("Масштаб текста")} aria-valuetext={`${appearance.textScale}%`}
+        <input type="range" min="70" max="150" step="5" value={appearance.textScale}
           onChange={event => onChange({ ...appearance, textScale: Number(event.currentTarget.value) })} />
       </label>
       <label className="lyrics-tool-scale">
         <span>{t("Масштаб обложки")} <output>{appearance.coverScale}%</output></span>
-        <input type="range" min="60" max="125" step="5" value={appearance.coverScale} disabled={!appearance.showCover} aria-label={t("Масштаб обложки")} aria-valuetext={`${appearance.coverScale}%`}
+        <input type="range" min="60" max="125" step="5" value={appearance.coverScale} disabled={!appearance.showCover}
           onChange={event => onChange({ ...appearance, coverScale: Number(event.currentTarget.value) })} />
       </label>
-      <label className="lyrics-tool-select">{t("Шрифт")}
-        <select value={appearance.font} onChange={event => onChange({ ...appearance, font: event.currentTarget.value as Appearance['font'] })}>
-          {Object.entries(fontLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}
-        </select>
-      </label>
-      <label className="lyrics-tool-select">{t("Выравнивание")}
-        <select value={appearance.align ?? (appearance.showCover ? 'left' : 'center')} onChange={event => onChange({ ...appearance, align: event.currentTarget.value as Appearance['align'] })}>
-          {Object.entries(alignments).map(([value, label]) => <option value={value} key={value}>{t(label)}</option>)}
-        </select>
-      </label>
+      <div className="lyrics-tool-selects">
+        <label>{t("Шрифт")}
+          <select value={appearance.font} onChange={event => onChange({ ...appearance, font: event.currentTarget.value as Appearance['font'] })}>
+            {Object.entries(fontLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}
+          </select>
+        </label>
+        <label>{t("Выравнивание")}
+          <select value={appearance.align ?? (appearance.showCover ? 'left' : 'center')} onChange={event => onChange({ ...appearance, align: event.currentTarget.value as Appearance['align'] })}>
+            {Object.entries(alignments).map(([value, label]) => <option value={value} key={value}>{t(label)}</option>)}
+          </select>
+        </label>
+      </div>
       <label className="lyrics-tool-cover"><input type="checkbox" checked={appearance.showCover}
         onChange={event => onChange({ ...appearance, showCover: event.currentTarget.checked })} />{t("Обложка")}</label>
-      <button type="button" className="lyrics-tool-track" onClick={() => {
-        handle.current?.focus()
-        setHovered(false)
-        setExpanded(false)
-        onChooseTrack()
-      }}><Icon name="search" />{t('Выбрать другую песню')}</button>
+      <Button className="lyrics-tool-track" variant="secondary" onClick={onChooseTrack}><Icon name="search" />{t('Выбрать другую песню')}</Button>
     </div>
-  </div>
+  </Modal>
 }

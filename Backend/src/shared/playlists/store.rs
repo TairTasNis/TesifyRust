@@ -35,7 +35,7 @@ impl LibraryStore {
             .write(true)
             .open(self.directory.join("library.lock"))
             .map_err(|_| "Не удалось открыть библиотеку.".to_string())?;
-        file.lock()
+        lock_file(&file)
             .map_err(|_| "Библиотека занята. Попробуйте ещё раз.".to_string())?;
         Ok(file)
     }
@@ -191,6 +191,27 @@ impl LibraryStore {
     }
 }
 
+#[cfg(not(target_os = "android"))]
+fn lock_file(file: &File) -> std::io::Result<()> {
+    file.lock()
+}
+
+#[cfg(target_os = "android")]
+fn lock_file(file: &File) -> std::io::Result<()> {
+    use std::os::fd::AsRawFd;
+    // Rust's File::lock is unsupported on Android. The kernel still supports flock.
+    loop {
+        // The descriptor belongs to the borrowed File and the lock lives until it is closed.
+        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) } == 0 {
+            return Ok(());
+        }
+        let error = std::io::Error::last_os_error();
+        if error.kind() != std::io::ErrorKind::Interrupted {
+            return Err(error);
+        }
+    }
+}
+
 fn validate_draft(mut draft: PlaylistDraft) -> Result<PlaylistDraft, String> {
     draft.name = draft.name.trim().to_string();
     draft.description = draft.description.trim().to_string();
@@ -206,7 +227,11 @@ fn validate_draft(mut draft: PlaylistDraft) -> Result<PlaylistDraft, String> {
     if let Some(url) = &draft.cover_url {
         let parsed =
             reqwest::Url::parse(url).map_err(|_| "Некорректная ссылка на обложку.".to_string())?;
-        if parsed.scheme() != "https" {
+        #[cfg(target_os = "android")]
+        let valid = parsed.scheme() == "https" || super::covers::valid_local_cover(url);
+        #[cfg(not(target_os = "android"))]
+        let valid = parsed.scheme() == "https";
+        if !valid {
             return Err("Ссылка на обложку должна использовать HTTPS.".into());
         }
     }

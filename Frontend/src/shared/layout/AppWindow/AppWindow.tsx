@@ -18,10 +18,11 @@ type AppWindowProps = {
   isAbout: boolean
   hasPlayer?: boolean
   isLyrics?: boolean
+  isPlayer?: boolean
   appWindow?: ReturnType<typeof useAppWindow>
 }
 
-export default function AppWindow({ children, isAbout, hasPlayer = false, isLyrics = false, appWindow }: AppWindowProps) {
+export default function AppWindow({ children, isAbout, hasPlayer = false, isLyrics = false, isPlayer = false, appWindow }: AppWindowProps) {
   const t = useTranslation()
   const localWindow = useAppWindow()
   const window = appWindow ?? localWindow
@@ -39,9 +40,9 @@ export default function AppWindow({ children, isAbout, hasPlayer = false, isLyri
     <div className={classes}>
       {window.windowState === 'open' ? (
         <div className={`app-window${hasPlayer ? ' app-window--with-player' : ''}${isLyrics ? ' app-window--lyrics' : ''}${isAbout ? ' app-window--about' : ''}`}>
-          {window.isNative && !window.isAndroid && !isLyrics && <div className="window-drag-region" data-tauri-drag-region aria-hidden="true" />}
+          {window.isNative && !window.isAndroid && !isLyrics && !isPlayer && <div className="window-drag-region" data-tauri-drag-region aria-hidden="true" />}
           {children}
-          {!mobile && !isLyrics && (!isAbout || window.isNative) && (
+          {!mobile && !isLyrics && !isPlayer && (!isAbout || window.isNative) && (
             <WindowControls
               isMaximized={window.isMaximized}
               onMinimize={window.minimize}

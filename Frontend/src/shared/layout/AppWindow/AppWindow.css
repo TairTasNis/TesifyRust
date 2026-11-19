@@ -57,10 +57,8 @@
   @starting-style { html:not([data-input="keyboard"]) .workspace, html:not([data-input="keyboard"]) .about-page { transform: translateY(6px); } }
 }
 
-.app-window--with-player .workspace { bottom: 111px; }
-.app-window--with-player .about-page { bottom: 100px; }
-@media(max-width: 700px) { .app-window--with-player .workspace { bottom: 155px; } .app-window--with-player .about-page { bottom: 144px; } }
-@media(max-width: 600px) { .app-window--with-player .sidebar { bottom: 155px; } }
+.app-window--with-player .workspace { bottom: 94px; }
+.app-window--with-player .about-page { bottom: 86px; }
 
 .desktop--maximized {
   padding: 0;
@@ -116,7 +114,8 @@
 .desktop.desktop--mobile { min-height: 0; padding: 0; background: var(--canvas); }
 .desktop--mobile .app-window {
   --mobile-nav-height: calc(62px + env(safe-area-inset-bottom, 0px));
-  --mobile-player-height: 76px;
+  --mobile-player-height: 62px;
+  --mobile-gutter: clamp(14px, 4vw, 22px);
   border-radius: 0;
 }
 .desktop--mobile .workspace {

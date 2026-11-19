@@ -49,7 +49,7 @@ export default function LyricsPage({ onClose, isMaximized = false, onToggleMaxim
   const [retry, setRetry] = useState(0)
   const [closing, setClosing] = useState(false)
   const [sourcesFor, setSourcesFor] = useState<string | null>(null)
-  const [showTrackPicker, setShowTrackPicker] = useState(false)
+  const [toolDialog, setToolDialog] = useState<'appearance' | 'track' | null>(null)
   const showSources = sourcesFor === key
   const [offset, setOffset] = useState<number>(() => {
     if (!track?.id) return 0
@@ -100,11 +100,11 @@ export default function LyricsPage({ onClose, isMaximized = false, onToggleMaxim
 
   useEffect(() => {
     const keyboard = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !event.defaultPrevented && !document.querySelector('dialog[open]') && !showSources && !showTrackPicker) { event.preventDefault(); onClose() }
+      if (event.key === 'Escape' && !event.defaultPrevented && !document.querySelector('dialog[open]') && !showSources) { event.preventDefault(); onClose() }
     }
     document.addEventListener('keydown', keyboard)
     return () => document.removeEventListener('keydown', keyboard)
-  }, [onClose, showSources, showTrackPicker])
+  }, [onClose, showSources])
 
   useEffect(() => {
     if (!trackId || !playlistId) return
@@ -149,9 +149,10 @@ export default function LyricsPage({ onClose, isMaximized = false, onToggleMaxim
           </button>
         )}
         <button ref={closeRef} className="lyrics-icon-button" onClick={close} aria-label={t("Закрыть текст песни")} title={t("Закрыть (Esc)")}><Icon name="close" /></button>
+        <button type="button" className="lyrics-icon-button lyrics-settings-trigger" aria-label={t("Настройки текста")}
+          aria-haspopup="dialog" onClick={() => setToolDialog('appearance')}><Icon name="settings" /></button>
       </div>
     </header>
-    <LyricsToolbar appearance={appearance} onChange={setAppearance} onChooseTrack={() => setShowTrackPicker(true)} />
     <div className="lyrics-layout" data-cover={appearance.showCover}>
       <div className="lyrics-now-playing" key={track.id}>
         {appearance.showCover && <PlaylistCover url={track.coverUrl} name={t("Обложка: {0}", track.title)} className="lyrics-cover" />}
@@ -189,10 +190,12 @@ export default function LyricsPage({ onClose, isMaximized = false, onToggleMaxim
         onSelectSource={handleSelectSource}
       />
     )}
-    {showTrackPicker && <LyricsTrackPicker alternate={Boolean(alternateItem)} onClose={() => setShowTrackPicker(false)} onSelect={item => {
+    {toolDialog === 'appearance' && <LyricsToolbar appearance={appearance} onChange={setAppearance}
+      onClose={() => setToolDialog(null)} onChooseTrack={() => setToolDialog('track')} />}
+    {toolDialog === 'track' && <LyricsTrackPicker alternate={Boolean(alternateItem)} onClose={() => setToolDialog(null)} onSelect={item => {
       setOverride(item && item.id !== player.current?.spotifyId ? { playingKey, item } : null)
       setSource(null)
-      setShowTrackPicker(false)
+      setToolDialog(null)
     }} />}
   </section>
 }
@@ -242,10 +245,11 @@ function LyricStage({ lyrics, offset, mode, followPlayback }: {
   useEffect(() => {
     if (!timed) return
     const audio = document.querySelector<HTMLAudioElement>('[data-testid="playback-audio"]')
-    let frame = 0, lastActive = -2, lastSeconds = 0
+    let frame = 0, lastActive = -2, lastSeconds = 0, clock = -Infinity
     const animate = () => {
       const rawTime = audio?.currentTime ?? playback.current.time
-      const time = rawTime - offset
+      clock = Math.max(clock, rawTime)
+      const time = clock - offset
       const index = activeLineAt(cues, time)
       const cue = cues[index]
       const seconds = cue && 'countdown' in cue ? Math.ceil(cue.end - time) : 0
@@ -266,39 +270,43 @@ function LyricStage({ lyrics, offset, mode, followPlayback }: {
               const count = letters[i][j].length
               const progress = wordProgress(time, word.start, word.end)
               const lit = time < word.start ? 0 : Math.min(count, Math.floor(progress * count) + 1)
-              node.style.setProperty('--lit-letters', String(lit))
+              const value = String(lit)
+              if (node.style.getPropertyValue('--lit-letters') !== value) node.style.setProperty('--lit-letters', value)
             } else {
-              node.style.setProperty('--word-fill', time >= word.start ? '100%' : '0%')
+              const lit = String(time >= word.start)
+              if (node.dataset.lit !== lit) node.dataset.lit = lit
             }
-            node.dataset.singing = time >= word.start && time < word.end ? 'true' : 'false'
           })
         }
       }
       if (!document.hidden && playback.current.playing && !playback.current.loading) frame = requestAnimationFrame(animate)
     }
     const resume = () => { cancelAnimationFrame(frame); animate() }
+    const seek = () => { clock = -Infinity; resume() }
     resume()
-    audio?.addEventListener('seeked', resume)
+    audio?.addEventListener('seeking', seek)
+    audio?.addEventListener('seeked', seek)
     audio?.addEventListener('timeupdate', resume)
     document.addEventListener('visibilitychange', resume)
-    return () => { cancelAnimationFrame(frame); audio?.removeEventListener('seeked', resume); audio?.removeEventListener('timeupdate', resume); document.removeEventListener('visibilitychange', resume) }
+    return () => {
+      cancelAnimationFrame(frame)
+      audio?.removeEventListener('seeking', seek)
+      audio?.removeEventListener('seeked', seek)
+      audio?.removeEventListener('timeupdate', resume)
+      document.removeEventListener('visibilitychange', resume)
+    }
   }, [cues, timed, showWordTiming, letters, mode, player.playing, player.loading, offset])
 
   useLayoutEffect(() => {
     if (!timed || browsing) return
-    const view = viewport.current, current = rows.current[Math.max(0, active)]
-    if (!view || !current) return
-    const target = current.offsetTop - view.clientHeight * .32
+    const view = viewport.current, content = list.current, current = rows.current[Math.max(0, active)]
+    if (!view || !content || !current) return
+    const target = Math.max(0, current.offsetTop - Math.max(8, Math.min(view.clientHeight * .33, view.clientHeight - current.offsetHeight - 8)))
     const delta = active - previousActive.current
     const cue = cues[active]
     const smooth = !firstPosition.current && !(cue && 'countdown' in cue) && (resumingFollow.current || Math.abs(delta) <= 1) && canAnimate()
-    // Every row has its own transform; the 45ms stagger creates the following-line wave.
-    rows.current.forEach((row, i) => {
-      if (!row) return
-      row.style.transitionDelay = smooth ? `${Math.min(5, Math.max(0, i - active)) * 45}ms` : '0ms'
-      row.style.transitionDuration = smooth ? '' : '0ms'
-      row.style.transform = `translate3d(0, ${-target}px, 0)`
-    })
+    content.style.transitionDuration = smooth ? '' : '0ms'
+    content.style.transform = `translateY(${-target}px)`
     firstPosition.current = false
     resumingFollow.current = false
     previousActive.current = active
@@ -310,12 +318,13 @@ function LyricStage({ lyrics, offset, mode, followPlayback }: {
     if (!timed) return
     if (browseTimer.current) clearTimeout(browseTimer.current)
     if (!browsingRef.current) {
-      const view = viewport.current
+      const view = viewport.current, content = list.current
       const row = rows.current[Math.max(0, active)]
-      if (view && row) {
+      if (view && content && row) {
         // Transfer the current visual position into native scroll before manual browsing.
         const visual = row.getBoundingClientRect().top - view.getBoundingClientRect().top
-        rows.current.forEach(row => { if (row) { row.style.transitionDuration = '0ms'; row.style.transitionDelay = '0ms'; row.style.transform = 'none' } })
+        content.style.transitionDuration = '0ms'
+        content.style.transform = 'none'
         view.style.overflowY = 'auto'
         view.scrollTop = Math.max(0, row.offsetTop - visual)
         oldScroll.current = view.scrollTop
@@ -329,13 +338,14 @@ function LyricStage({ lyrics, offset, mode, followPlayback }: {
   function follow() {
     if (browseTimer.current) clearTimeout(browseTimer.current)
     if (!browsingRef.current) return
-    const view = viewport.current
-    if (view) {
+    const view = viewport.current, content = list.current
+    if (view && content) {
       const scroll = view.scrollTop
-      rows.current.forEach(row => { if (row) { row.style.transitionDuration = '0ms'; row.style.transitionDelay = '0ms'; row.style.transform = `translate3d(0, ${-scroll}px, 0)` } })
+      content.style.transitionDuration = '0ms'
+      content.style.transform = `translateY(${-scroll}px)`
       view.scrollTop = 0
       view.style.overflowY = 'hidden'
-      // Commit the manual position before the cascade moves back to the live phrase.
+      // Commit the manual position before returning to the current phrase.
       void view.offsetHeight
       oldScroll.current = 0
     }
@@ -348,13 +358,12 @@ function LyricStage({ lyrics, offset, mode, followPlayback }: {
   function seekLine(index: number) {
     if (!timed || player.error || player.duration <= 0) return
     player.seek(Math.max(0, cues[index].start + offset))
-    setCue({ index, seconds: 0 })
     if (browsingRef.current) follow()
   }
 
   return <div className="lyrics-stage" data-timed={timed} data-browsing={browsing}>
     <div className="lyrics-viewport" ref={viewport} tabIndex={0} aria-label={t(timed ? "Текст песни. Нажмите на строку, чтобы перемотать." : "Текст песни")}
-      onWheel={browse} onTouchStart={browse} onTouchMove={browse} onTouchEnd={browse} onKeyDown={(event) => { if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'].includes(event.key)) browse() }}
+      onWheel={browse} onTouchMove={browse} onKeyDown={(event) => { if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'].includes(event.key)) browse() }}
       onScroll={() => { if (browsingRef.current && viewport.current && oldScroll.current !== viewport.current.scrollTop) { oldScroll.current = viewport.current.scrollTop; if (browseTimer.current) clearTimeout(browseTimer.current); browseTimer.current = setTimeout(follow, MANUAL_SCROLL_MS) } }}>
       <div className="lyrics-lines" ref={list}>
         {cues.map((line, i) => {
@@ -374,7 +383,7 @@ function LyricStage({ lyrics, offset, mode, followPlayback }: {
               <span key={j} className="lyrics-word" ref={node => { (words.current[i] ??= [])[j] = node }}>
                 {mode === 'letter' ? letters[i][j].map((letter, index) => <span key={index} className="lyrics-letter"
                   style={{ '--letter-index': index } as CSSProperties}>{letter}</span>)
-                  : <><span>{word.text}</span><span className="lyrics-word-highlight" aria-hidden="true">{word.text}</span></>}
+                  : word.text}
               </span>) : line.text}</span>
           </button>
         })}

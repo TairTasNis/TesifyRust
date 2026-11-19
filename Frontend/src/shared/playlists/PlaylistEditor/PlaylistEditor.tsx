@@ -34,7 +34,7 @@ export default function PlaylistEditor({ initial, onClose, onSave, onImport }: P
 
   function chooseFile(selected: File | undefined) {
     if (!selected) return
-    if (!['image/png', 'image/jpeg', 'image/webp'].includes(selected.type)) { setError(t("Выберите обложку в формате PNG, JPG или WebP.")); return }
+    if (selected.type && !['image/png', 'image/jpeg', 'image/webp'].includes(selected.type)) { setError(t("Выберите обложку в формате PNG, JPG или WebP.")); return }
     if (selected.size > 8 * 1024 * 1024) { setError(t("Обложка должна быть не больше 8 МБ.")); return }
     setError(null); setFile(selected); uploaded.current = null
   }

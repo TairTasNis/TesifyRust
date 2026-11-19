@@ -1,13 +1,11 @@
 use crate::shared::{
-    playlists::models::{CoverUpload, UploadedCover},
+    playlists::{covers::{MAX_BYTES, image_type}, models::{CoverUpload, UploadedCover}},
     services::AppServices,
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
 use reqwest::multipart::{Form, Part};
 use serde::Deserialize;
 use std::time::Duration;
-
-const MAX_BYTES: usize = 8 * 1024 * 1024;
 
 #[derive(Deserialize)]
 struct UploadResponse {
@@ -23,10 +21,6 @@ pub async fn upload_cover(
     services: &AppServices,
     input: CoverUpload,
 ) -> Result<UploadedCover, String> {
-    let key = services
-        .imgbb_api_key
-        .as_deref()
-        .ok_or("Добавьте IMGBB_API_KEY в .env для загрузки обложек.")?;
     if input.image_base64.len() > (MAX_BYTES * 4 / 3 + 8) {
         return Err("Обложка должна быть не больше 8 МБ.".into());
     }
@@ -37,6 +31,12 @@ pub async fn upload_cover(
         return Err("Обложка должна быть не больше 8 МБ.".into());
     }
     let (mime, extension) = image_type(&bytes).ok_or("Выберите изображение PNG, JPG или WebP.")?;
+    #[cfg(target_os = "android")]
+    if services.imgbb_api_key.is_none() {
+        return Ok(UploadedCover { url: format!("data:{mime};base64,{}", STANDARD.encode(bytes)) });
+    }
+    let key = services.imgbb_api_key.as_deref()
+        .ok_or("Добавьте IMGBB_API_KEY в .env для загрузки обложек.")?;
     let stem: String = input
         .file_name
         .rsplit_once('.')
@@ -86,16 +86,4 @@ pub async fn upload_cover(
         return Err("imgbb вернул неподдерживаемую ссылку.".into());
     }
     Ok(UploadedCover { url })
-}
-
-fn image_type(bytes: &[u8]) -> Option<(&'static str, &'static str)> {
-    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
-        Some(("image/png", "png"))
-    } else if bytes.starts_with(&[0xff, 0xd8, 0xff]) {
-        Some(("image/jpeg", "jpg"))
-    } else if bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP") {
-        Some(("image/webp", "webp"))
-    } else {
-        None
-    }
 }

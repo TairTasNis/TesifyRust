@@ -3618,7 +3618,7 @@ dependencies = [
 
 [[package]]
 name = "tesify"
-version = "26.11.0-dev.2"
+version = "26.11.0-dev.3"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -3627,6 +3627,7 @@ dependencies = [
  "dotenvy",
  "flate2",
  "futures-util",
+ "libc",
  "quick-xml",
  "regex",
  "reqwest 0.12.28",

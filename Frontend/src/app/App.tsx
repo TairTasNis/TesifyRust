@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import AboutPage from '../pages/About/AboutPage'
 import HomePage from '../pages/Home/HomePage'
 import LibraryPage from '../pages/Library/LibraryPage'
 import LyricsPage from '../pages/Lyrics/LyricsPage'
 import { getLyrics } from '../pages/Lyrics/api'
+import NowPlayingPage from '../pages/NowPlaying/NowPlayingPage'
+import { measurePlayer, movePlayer, playerTransitionMs } from '../pages/NowPlaying/playerTransition'
 import PlaylistPage from '../pages/Playlist/PlaylistPage'
 import SearchPage from '../pages/Search/SearchPage'
 import ArtistPage from '../pages/Artist/ArtistPage'
@@ -14,7 +17,7 @@ import type { OpenCatalog } from '../shared/catalog/types'
 import AppWindow from '../shared/layout/AppWindow/AppWindow'
 import { useAppWindow } from '../shared/layout/AppWindow/useAppWindow'
 import Sidebar from '../shared/layout/Sidebar/Sidebar'
-import { useInputMode } from '../shared/lib/motion'
+import { canAnimate, useInputMode } from '../shared/lib/motion'
 import { PlaybackProvider, usePlayback } from '../shared/playback/PlaybackProvider'
 import MiniPlayer from '../shared/playback/MiniPlayer/MiniPlayer'
 import { useTranslation } from '../shared/preferences/i18n'
@@ -33,21 +36,68 @@ function AppContent() {
   const [route, setRoute] = useState(routeFromHash)
   const [lyricsOpen, setLyricsOpen] = useState(false)
   const closeLyrics = useCallback(() => setLyricsOpen(false), [])
+  const [playerView, setPlayerView] = useState<'closed' | 'open' | 'closing'>('closed')
+  const closeTimer = useRef(0)
+  const moving = useRef<Animation[]>([])
   const activePage = route.page
   const trackId = player.current?.id
   const playlistId = player.playlistId
   const aboutEnteredFromApp = useRef(false)
   const catalogEnteredFromApp = useRef(false)
+  const resetOverlays = useCallback(() => {
+    window.clearTimeout(closeTimer.current)
+    moving.current.forEach(animation => animation.cancel())
+    setPlayerView('closed')
+    setLyricsOpen(false)
+  }, [])
+
+  const closePlayer = useCallback(() => {
+    const animate = canAnimate()
+    const from = animate ? measurePlayer('full') : null
+    moving.current.forEach(animation => animation.cancel())
+    const finish = () => {
+      setPlayerView('closed')
+      document.querySelector<HTMLButtonElement>('.mini-player-open')?.focus({ preventScroll: true })
+    }
+    if (!from) {
+      flushSync(() => setPlayerView('closed'))
+      finish()
+      return
+    }
+    flushSync(() => setPlayerView('closing'))
+    moving.current = movePlayer(from, 'mini')
+    closeTimer.current = window.setTimeout(finish, playerTransitionMs)
+  }, [])
+
+  function openPlayer() {
+    window.clearTimeout(closeTimer.current)
+    const from = canAnimate() ? measurePlayer('mini') : null
+    moving.current.forEach(animation => animation.cancel())
+    flushSync(() => { setLyricsOpen(false); setPlayerView('open') })
+    if (from) moving.current = movePlayer(from, 'full')
+  }
 
   useEffect(() => {
     if (trackId && playlistId) void getLyrics(playlistId, trackId).catch(() => {})
   }, [playlistId, trackId])
 
   useEffect(() => {
-    const syncPage = () => { setRoute(routeFromHash()); setLyricsOpen(false) }
+    const syncPage = () => { setRoute(routeFromHash()); resetOverlays() }
     window.addEventListener('hashchange', syncPage)
-    return () => window.removeEventListener('hashchange', syncPage)
-  }, [])
+    return () => { window.removeEventListener('hashchange', syncPage); window.clearTimeout(closeTimer.current) }
+  }, [resetOverlays])
+
+  useEffect(() => {
+    if (playerView !== 'open' || lyricsOpen) return
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !event.defaultPrevented && !document.querySelector('dialog[open]')) {
+        event.preventDefault()
+        closePlayer()
+      }
+    }
+    document.addEventListener('keydown', keydown)
+    return () => document.removeEventListener('keydown', keydown)
+  }, [closePlayer, lyricsOpen, playerView])
 
   useEffect(() => {
     if (!appWindow.isAndroid) return
@@ -58,19 +108,25 @@ function AppContent() {
         dialog.dispatchEvent(new Event('cancel', { bubbles: true, cancelable: true }))
       } else if (lyricsOpen) {
         event.preventDefault()
-        document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+        const target = document.activeElement ?? document.body
+        target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      } else if (playerView === 'open') {
+        event.preventDefault()
+        closePlayer()
+      } else if (playerView === 'closing') {
+        event.preventDefault()
       }
     }
     window.addEventListener('tesify:back', back)
     return () => window.removeEventListener('tesify:back', back)
-  }, [appWindow.isAndroid, lyricsOpen])
+  }, [appWindow.isAndroid, closePlayer, lyricsOpen, playerView])
 
   useEffect(() => {
     document.title = `Tesify — ${t(pageTitles[activePage])}`
   }, [activePage, t])
 
   function navigate(page: PageId, id?: string) {
-    setLyricsOpen(false)
+    resetOverlays()
     if (page === 'about') aboutEnteredFromApp.current = true
     window.location.hash = id ? `${page}/${id}` : page
     setRoute(routeFromHash())
@@ -89,10 +145,11 @@ function AppContent() {
   }
   const leaveCatalog = () => { if (catalogEnteredFromApp.current) window.history.back(); else navigate('search') }
   const sidebarPage = activePage === 'playlist' ? 'library' : ['artist', 'album', 'spotify-playlist'].includes(activePage) ? 'search' : activePage
+  const overlayOpen = lyricsOpen || playerView !== 'closed'
 
   return (
-    <AppWindow appWindow={appWindow} isAbout={activePage === 'about'} hasPlayer={Boolean(player.current)} isLyrics={lyricsOpen}>
-      <div style={{ display: 'contents' }} inert={lyricsOpen} aria-hidden={lyricsOpen || undefined}>
+    <AppWindow appWindow={appWindow} isAbout={activePage === 'about'} hasPlayer={Boolean(player.current)} isLyrics={lyricsOpen} isPlayer={playerView !== 'closed'}>
+      <div style={{ display: 'contents' }} inert={overlayOpen} aria-hidden={overlayOpen || undefined}>
       {activePage === 'about' ? (
         <AboutPage onBack={leaveAbout} />
       ) : (
@@ -116,7 +173,9 @@ function AppContent() {
           onToggleMaximize={appWindow.isAndroid ? undefined : appWindow.toggleMaximize}
         />
       )}
-      <MiniPlayer lyricsOpen={lyricsOpen} onToggleLyrics={() => setLyricsOpen(open => !open)} onOpen={openCatalog} />
+      {!lyricsOpen && playerView !== 'closed' && <NowPlayingPage closing={playerView === 'closing'} onClose={closePlayer}
+        onLyrics={() => setLyricsOpen(true)} onOpen={openCatalog} />}
+      <MiniPlayer lyricsOpen={lyricsOpen} expanded={!lyricsOpen && playerView === 'open'} onOpen={openPlayer} />
     </AppWindow>
   )
 }
