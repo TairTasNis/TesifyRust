@@ -715,6 +715,26 @@ struct Candidate {
     channel_is_verified: Option<bool>,
 }
 
+#[cfg(any(target_os = "android", test))]
+pub(super) fn confirmed_catalog_song(
+    title: &str,
+    artist: &str,
+    duration: Duration,
+    songs: impl IntoIterator<Item = (String, String, String, u64)>,
+) -> Option<VideoMatch> {
+    let candidates: Vec<_> = songs.into_iter().map(|(id, title, artist, seconds)| Candidate {
+        id: Some(id),
+        track: Some(title.clone()),
+        title: Some(title),
+        channel: Some(artist),
+        duration: Some(seconds as f64),
+        ..Candidate::default()
+    }).collect();
+    best_video(title, artist, Some(duration.as_secs_f64()), candidates.iter())
+        .filter(RankedVideo::confirmed)
+        .map(|ranked| ranked.video)
+}
+
 struct RankedVideo {
     video: VideoMatch,
     quality: u32,

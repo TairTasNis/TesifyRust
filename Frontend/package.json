@@ -1,15 +1,17 @@
 {
   "name": "tesify-frontend",
   "private": true,
-  "version": "26.11.0-dev.2",
+  "version": "26.11.0-dev.5",
   "type": "module",
   "scripts": {
     "test": "node --experimental-strip-types --test src/pages/Playlist/sorting.test.mjs src/pages/Lyrics/timing.test.mjs",
     "dev": "node ../scripts/dev.mjs",
     "dev:desktop": "vite --host 127.0.0.1 --port 1420 --strictPort",
+    "dev:android": "vite --host 127.0.0.1 --port 1420 --strictPort --mode android",
     "desktop:dev": "node ../scripts/desktop.mjs dev",
     "desktop:build": "node ../scripts/desktop.mjs build",
     "build": "tsc -b && vite build",
+    "build:android": "tsc -b && vite build --mode android",
     "preview": "vite preview --host 127.0.0.1"
   },
   "bin": {

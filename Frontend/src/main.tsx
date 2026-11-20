@@ -15,6 +15,7 @@ import '@fontsource/manrope/cyrillic-ext-500.css'
 import '@fontsource/manrope/cyrillic-ext-600.css'
 import '@fontsource/manrope/cyrillic-ext-700.css'
 import './shared/styles/global.css'
+import 'virtual:tesify-platform-styles'
 
 if (/Android/i.test(navigator.userAgent)) {
   const viewport = document.querySelector<HTMLMetaElement>('meta[name="viewport"]')

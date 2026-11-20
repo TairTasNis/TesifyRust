@@ -1,8 +1,4 @@
 .workspace.search-page { top: 0; }
-.desktop--mobile .workspace.search-page { top: env(safe-area-inset-top, 0px); }
-.desktop--mobile .catalog-search { min-height: 48px; }
-.desktop--mobile .catalog-search input { font-size: 16px; }
-.desktop--mobile .search-filters button { min-height: 40px; }
 .search-page { overflow-y: auto; padding: 30px 24px 50px; color: var(--ink); font-family: "Manrope", "Segoe UI", sans-serif; scrollbar-width: thin; scrollbar-color: #ddd transparent; }
 .search-header { display: flex; min-height: 56px; align-items: center; gap: 34px; padding-right: 135px; }
 .search-header h1 { margin: 0; font-size: 36px; font-weight: 700; letter-spacing: -1.4px; }
@@ -40,24 +36,3 @@
 @media(max-width: 1050px) { .search-header { gap: 23px; } .search-header h1 { font-size: 31px; } .search-overview { grid-template-columns: minmax(220px, .9fr) minmax(0, 1.3fr); gap: 20px; } }
 @media(max-width: 800px) { .search-header { align-items: flex-start; flex-direction: column; gap: 23px; padding-right: 0; } .search-header h1 { min-height: 56px; padding-top: 7px; } .search-overview { grid-template-columns: 1fr; gap: 30px; } .search-top-card { min-height: 260px; } }
 @media(max-width: 600px) { .search-page { padding: 25px 14px 35px; } .search-header h1 { font-size: 28px; } .catalog-search { padding: 12px; gap: 8px; } .catalog-search input { font-size: 11px; } .catalog-search > svg { width: 18px; height: 18px; } .search-filters { gap: 6px; margin-top: 21px; } .search-filters button { padding: 8px 11px; font-size: 10px; } .search-overview h2 { font-size: 21px; } .search-empty p { font-size: 11px; } .search-top-card { padding: 20px; } }
-.desktop--mobile .search-page { padding: 18px var(--mobile-gutter) 24px; }
-.desktop--mobile .search-header { flex-direction: column; align-items: stretch; gap: 12px; padding: 0; }
-.desktop--mobile .search-header h1 { min-height: 0; padding: 0; line-height: 1.25; }
-.desktop--mobile .catalog-search { width: min(100%, 490px); }
-.desktop--mobile .search-filters { margin: 14px 0 20px; }
-.desktop--mobile .search-overview { grid-template-columns: minmax(0, 1fr); gap: 20px; }
-.desktop--mobile .search-top h2 { margin-bottom: 10px; }
-.desktop--mobile .search-top-card {
-  display: grid;
-  grid-template-columns: 66px minmax(0, 1fr) 38px;
-  grid-template-rows: auto auto;
-  align-content: center;
-  align-items: center;
-  gap: 4px 11px;
-  min-height: 94px;
-  padding: 12px;
-}
-.desktop--mobile .search-top-card .playlist-cover { grid-area: 1 / 1 / 3; width: 66px; height: 66px; border-radius: 8px; }
-.desktop--mobile .search-top-card > strong { grid-area: 1 / 2; align-self: end; margin: 0; padding: 0; font-size: 19px; letter-spacing: -.45px; }
-.desktop--mobile .search-top-card > span:not(.search-top-action) { grid-area: 2 / 2; align-self: start; max-width: none; margin: 0; line-height: 1.4; }
-.desktop--mobile .search-top-action { position: static; grid-area: 1 / 3 / 3; width: 38px; height: 38px; }

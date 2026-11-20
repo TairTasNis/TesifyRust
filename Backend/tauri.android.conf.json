@@ -1,5 +1,9 @@
 {
-  "version": "26.11.0-dev.4",
+  "build": {
+    "frontendDist": "../Frontend/dist-android",
+    "beforeDevCommand": { "script": "npm run dev:android", "cwd": "../Frontend" },
+    "beforeBuildCommand": { "script": "npm run build:android", "cwd": "../Frontend" }
+  },
   "app": {
     "windows": [
       {
@@ -12,7 +16,7 @@
   "bundle": {
     "resources": [],
     "android": {
-      "versionCode": 261104
+      "versionCode": 261105
     }
   }
 }

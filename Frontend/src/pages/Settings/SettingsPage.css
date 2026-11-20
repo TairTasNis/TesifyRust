@@ -15,7 +15,4 @@
 .settings-color input::-webkit-color-swatch-wrapper { padding: 0; }
 .settings-color input::-webkit-color-swatch { border: 0; border-radius: 4px; }
 .settings-about { display: none; }
-.desktop--mobile .workspace.settings-page { padding: 24px 16px; }
-.desktop--mobile .settings-row select { min-height: 44px; }
-.desktop--mobile .settings-about { display: block; min-height: 44px; margin-top: 18px; padding-inline: 15px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); cursor: pointer; }
 @media (max-width: 600px) { .settings-page { padding-inline: 12px; } .settings-panel { padding-inline: 12px; } }

@@ -8,7 +8,6 @@ import { useTranslation } from '../../shared/preferences/i18n'
 import Icon from '../../shared/ui/Icon/Icon'
 import MusicLoader from '../../shared/ui/MusicLoader/MusicLoader'
 import PlaylistCover from '../../shared/ui/PlaylistCover/PlaylistCover'
-import './NowPlayingPage.css'
 
 type Props = { closing: boolean; onClose: () => void; onLyrics: () => void; onOpen: OpenCatalog }
 const clock = (seconds: number) => formatDuration(Math.floor(seconds) * 1000)

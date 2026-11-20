@@ -4,7 +4,6 @@ import Icon from '../../ui/Icon/Icon'
 import MusicLoader from '../../ui/MusicLoader/MusicLoader'
 import PlaylistCover from '../../ui/PlaylistCover/PlaylistCover'
 import { usePlayback } from '../PlaybackProvider'
-import './MobileMiniPlayer.css'
 
 export default function MobileMiniPlayer({ lyricsOpen, expanded, onOpen }: {
   lyricsOpen: boolean; expanded: boolean; onOpen: () => void
@@ -39,7 +38,7 @@ export default function MobileMiniPlayer({ lyricsOpen, expanded, onOpen }: {
   const progress = player.duration ? Math.min(100, (player.time / player.duration) * 100) : 0
   const playbackLabel = player.error ? t("Повторить") : player.playing ? t("Пауза") : t("Продолжить")
   const identity = <>
-    <PlaylistCover url={track.coverUrl} name={track.title} className="mobile-mini-player-cover" />
+    <PlaylistCover url={track.coverUrl} name={track.title} eager className="mobile-mini-player-cover" />
     <span className="mobile-mini-player-identity"><strong>{track.title}</strong><span>{track.artist}</span></span>
   </>
 

@@ -50,7 +50,7 @@ export default function SearchPage({ onOpen }: { onOpen: OpenCatalog }) {
       void searchSpotify(term, category).then(data => { if (request === generation.current) setResult(data) })
         .catch(error => { if (request === generation.current) setError(errorMessage(error)) })
         .finally(() => { if (request === generation.current) setLoading(false) })
-    }, skipDelay ? 0 : 160)
+    }, skipDelay ? 0 : import.meta.env.MODE === 'android' ? 120 : 160)
     return () => { window.clearTimeout(timeout); ++generation.current }
   }, [term, category, retry])
   async function loadMore() {

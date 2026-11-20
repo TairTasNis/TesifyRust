@@ -13,7 +13,7 @@ const subscribeViewport = (update: () => void) => {
 
 export function useMobileLayout({ isAndroid, isNative }: { isAndroid: boolean; isNative: boolean }) {
   const compact = useSyncExternalStore(subscribeViewport, isCompact)
-  return isAndroid || (!isNative && compact)
+  return isAndroid || (import.meta.env.MODE === 'android' && !isNative && compact)
 }
 
 export function useAppWindow() {

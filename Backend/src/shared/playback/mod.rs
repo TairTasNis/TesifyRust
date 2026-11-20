@@ -3,6 +3,8 @@ mod audio_range;
 pub(crate) mod android;
 pub mod commands;
 mod intro_cache;
+#[cfg(any(target_os = "android", test))]
+mod music_search;
 pub mod play_engine;
 mod stream;
 
@@ -139,25 +141,34 @@ impl PlaybackService {
                 .acquire_owned()
                 .await
                 .map_err(|_| "Плеер недоступен.".to_string())?;
+            let artist = track.artist.split(',').next().unwrap_or(&track.artist).trim();
+            static CREDITS: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+                regex::Regex::new(r"(?i)\s*[\(\[](?:feat\.?|ft\.?|with)\s+[^\)\]]*[\)\]]")
+                    .expect("static regex")
+            });
+            let title = CREDITS.replace_all(&track.title, "");
+            let duration = track.duration_ms.filter(|ms| *ms > 0)
+                .map(|ms| Duration::from_millis(ms as u64));
+            #[cfg(target_os = "android")]
+            let (engine, catalog_video) = tokio::join!(
+                self.engine(), music_search::find(&self.client, &title, artist, duration)
+            );
+            #[cfg(target_os = "android")]
+            let engine = engine?;
+            #[cfg(not(target_os = "android"))]
             let engine = self.engine().await?;
+            let title = title.into_owned();
+            let artist = artist.to_owned();
             tauri::async_runtime::spawn_blocking(move || {
                 let _permit = permit;
-                let artist = track
-                    .artist
-                    .split(',')
-                    .next()
-                    .unwrap_or(&track.artist)
-                    .trim();
-                let credits =
-                    regex::Regex::new(r"(?i)\s*[\(\[](?:feat\.?|ft\.?|with)\s+[^\)\]]*[\)\]]")
-                        .expect("static regex");
-                let title = credits.replace_all(&track.title, "");
-                let duration = track
-                    .duration_ms
-                    .filter(|ms| *ms > 0)
-                    .map(|ms| Duration::from_millis(ms as u64));
+                #[cfg(target_os = "android")]
+                if let Some(video) = catalog_video {
+                    if let Ok(source) = engine.clone().with_timeout(Duration::from_secs(10)).audio_source(&video) {
+                        return Ok((video, source));
+                    }
+                }
                 let video = engine
-                    .find_with_duration(&title, artist, duration)
+                    .find_with_duration(&title, &artist, duration)
                     .map_err(engine_error)?;
                 let source = engine.audio_source(&video).map_err(engine_error)?;
                 Ok::<_, String>((video, source))

@@ -40,7 +40,7 @@ function AppContent() {
   const closeLyrics = useCallback(() => setLyricsOpen(false), [])
   const [playerView, setPlayerView] = useState<'closed' | 'open' | 'closing'>('closed')
   const closeTimer = useRef(0)
-  const moving = useRef<Animation[]>([])
+  const stopMoving = useRef<(() => void) | null>(null)
   const activePage = route.page
   const trackId = player.current?.id
   const playlistId = player.playlistId
@@ -48,7 +48,7 @@ function AppContent() {
   const catalogEnteredFromApp = useRef(false)
   const resetOverlays = useCallback(() => {
     window.clearTimeout(closeTimer.current)
-    moving.current.forEach(animation => animation.cancel())
+    stopMoving.current?.()
     setPlayerView('closed')
     setLyricsOpen(false)
   }, [])
@@ -56,7 +56,7 @@ function AppContent() {
   const closePlayer = useCallback(() => {
     const animate = canAnimate()
     const from = animate ? measurePlayer('full') : null
-    moving.current.forEach(animation => animation.cancel())
+    stopMoving.current?.()
     const finish = () => {
       setPlayerView('closed')
       document.querySelector<HTMLButtonElement>('.mobile-mini-player-open')?.focus({ preventScroll: true })
@@ -67,16 +67,16 @@ function AppContent() {
       return
     }
     flushSync(() => setPlayerView('closing'))
-    moving.current = movePlayer(from, 'mini')
+    stopMoving.current = movePlayer(from, 'mini')
     closeTimer.current = window.setTimeout(finish, playerTransitionMs)
   }, [])
 
   function openPlayer() {
     window.clearTimeout(closeTimer.current)
     const from = canAnimate() ? measurePlayer('mini') : null
-    moving.current.forEach(animation => animation.cancel())
+    stopMoving.current?.()
     flushSync(() => { setLyricsOpen(false); setPlayerView('open') })
-    if (from) moving.current = movePlayer(from, 'full')
+    if (from) stopMoving.current = movePlayer(from, 'full')
   }
 
   useEffect(() => {
@@ -86,7 +86,11 @@ function AppContent() {
   useEffect(() => {
     const syncPage = () => { setRoute(routeFromHash()); resetOverlays() }
     window.addEventListener('hashchange', syncPage)
-    return () => { window.removeEventListener('hashchange', syncPage); window.clearTimeout(closeTimer.current) }
+    return () => {
+      window.removeEventListener('hashchange', syncPage)
+      window.clearTimeout(closeTimer.current)
+      stopMoving.current?.()
+    }
   }, [resetOverlays])
 
   useEffect(() => {

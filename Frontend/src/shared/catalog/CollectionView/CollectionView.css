@@ -14,10 +14,3 @@
 .collection-no-tracks { color: var(--muted); font-size: 13px; }
 @media(max-width: 800px) { .collection-identity { gap: 21px; } .collection-identity > .playlist-cover { width: 160px; } .collection-identity h1 { font-size: 34px; letter-spacing: -1px; } }
 @media(max-width: 600px) { .collection-identity { align-items: flex-start; flex-direction: column; gap: 22px; padding: 0 17px; } .collection-identity > .playlist-cover { width: min(200px, 90%); } .collection-identity h1 { margin-top: 10px; font-size: 29px; } .collection-meta { font-size: 10px; } }
-.desktop--mobile .collection-hero { padding-bottom: 14px; }
-.desktop--mobile .collection-identity { flex-direction: row; align-items: center; padding-inline: var(--mobile-gutter); gap: 14px; }
-.desktop--mobile .collection-identity > .playlist-cover { width: clamp(76px, 25vw, 132px); flex: 0 0 auto; }
-.desktop--mobile .collection-identity h1 { margin: 5px 0 9px; font-size: clamp(20px, 6.4vw, 31px); }
-.desktop--mobile .collection-description { margin: 0 0 7px; line-height: 1.55; }
-.desktop--mobile .collection-meta { gap: 3px 8px; }
-.desktop--mobile .collection-meta > span:not(:first-child)::before { padding-right: 7px; }

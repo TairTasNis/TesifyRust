@@ -19,8 +19,3 @@
 @media(hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) { html:not([data-input="keyboard"]) .catalog-play:hover { transform: scale(1.04); } }
 @media(prefers-reduced-motion: no-preference) { html:not([data-input="keyboard"]) .catalog-play:active { transform: scale(.97); } }
 @media(max-width: 700px) { .catalog-body { padding-right: 17px; padding-left: 17px; } .catalog-toolbar { padding: 0 17px; } .catalog-page h2 { font-size: 21px; } }
-.desktop--mobile .workspace.catalog-page { border-radius: 0; top: env(safe-area-inset-top, 0px); }
-.desktop--mobile :is(.catalog-body, .catalog-toolbar, .catalog-state) { padding-inline: var(--mobile-gutter); }
-.desktop--mobile .catalog-toolbar { height: 56px; }
-.desktop--mobile .catalog-back { width: 44px; height: 44px; }
-.desktop--mobile .catalog-actions { padding-block: 10px 18px; }
