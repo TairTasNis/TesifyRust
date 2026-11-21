@@ -50,7 +50,6 @@ function AppContent() {
   const [keepLyrics, setKeepLyrics] = useState(false)
   const [playerOpen, setPlayerOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
-  const [homeCompact, setHomeCompact] = useState(() => window.location.hash === '#home')
   const [mobileQuery, setMobileQuery] = useState(() => savedSearch().query)
   const [mobileSubmitCount, setMobileSubmitCount] = useState(0)
   const [playlistSearch, setPlaylistSearch] = useState({ route: '', query: '' })
@@ -58,7 +57,7 @@ function AppContent() {
   const activePage = route.page
   const activeRoute = routeKey(route)
   const inPlaylist = activePage === 'playlist' || activePage === 'spotify-playlist'
-  const compact = inPlaylist || activePage === 'settings' || activePage === 'search' || (activePage === 'home' && homeCompact)
+  const compact = inPlaylist || activePage === 'search'
   const tabMode: MobileTabsMode = searchOpen ? 'search' : compact ? 'compact' : 'tabs'
   const dockHidden = useMobileDockScroll(activeRoute, mobile && !searchOpen && !playerOpen && !lyricsOpen && (inPlaylist || activePage === 'search'))
   const closeSearch = useCallback(() => setSearchOpen(false), [])
@@ -145,7 +144,6 @@ function AppContent() {
 
   function navigate(page: PageId, id?: string, animated = true) {
     const next = { page, playlistId: id }
-    if (mobile && page === 'home') setHomeCompact(true)
     if (mobile) closeSearch()
     if (routeKey(next) === routeKey(route)) return
     setPlayerOpen(false)
@@ -250,7 +248,6 @@ function AppContent() {
             data-preview={preview || undefined} inert={preview} aria-hidden={preview || undefined}>{page(item)}</div>
         })}
         {activePage !== 'about' && (mobile ? <MobileTabs activePage={sidebarPage} mode={tabMode} query={query} hidden={dockHidden} inPlaylist={inPlaylist}
-          left={activePage === 'home' ? 'library' : 'home'} right={activePage === 'settings' ? 'library' : 'settings'}
           onOpenSearch={() => { if (!inPlaylist) navigate('search', undefined, false); setSearchOpen(true) }} onCloseSearch={closeSearch}
           onQuery={value => inPlaylist ? setPlaylistSearch({ route: activeRoute, query: value }) : setMobileQuery(value)}
           onSubmit={() => { if (!inPlaylist) setMobileSubmitCount(count => count + 1) }}

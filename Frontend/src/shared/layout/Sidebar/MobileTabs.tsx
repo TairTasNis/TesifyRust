@@ -23,8 +23,6 @@ type Props = {
   query: string
   hidden: boolean
   inPlaylist: boolean
-  left: 'home' | 'library'
-  right: 'settings' | 'library'
   onOpenSearch: () => void
   onCloseSearch: () => void
   onQuery: (query: string) => void
@@ -32,7 +30,7 @@ type Props = {
   onNavigate: (page: PageId) => void
 }
 
-export default function MobileTabs({ activePage, mode, query, hidden, inPlaylist, left, right, onOpenSearch, onCloseSearch, onQuery, onSubmit, onNavigate }: Props) {
+export default function MobileTabs({ activePage, mode, query, hidden, inPlaylist, onOpenSearch, onCloseSearch, onQuery, onSubmit, onNavigate }: Props) {
   const t = useTranslation()
   const index = tabs.findIndex(tab => tab.id === activePage)
   const nav = useRef<HTMLElement>(null)
@@ -155,7 +153,7 @@ export default function MobileTabs({ activePage, mode, query, hidden, inPlaylist
     <span className="mobile-tabs-track" aria-hidden="true" />
     <span ref={lens} className="mobile-tab-lens" hidden={index < 0} aria-hidden="true"><span ref={fill} /></span>
     {tabs.map(({ id, label, icon }, i) => {
-      const side = id === left ? 'left' : id === right ? 'right' : undefined
+      const side = id === 'home' ? 'left' : id === 'settings' ? 'right' : undefined
       return <button key={id} type="button" className={`mobile-tab mobile-tab--${id}`} aria-label={t(label)}
         data-side={side} aria-current={activePage === id ? 'page' : undefined} inert={mode === 'search' || (mode === 'compact' && !side)}
         onPointerDown={event => pointerDown(event, i)} onPointerMove={pointerMove} onPointerUp={event => finish(event, false)}
@@ -179,8 +177,7 @@ export default function MobileTabs({ activePage, mode, query, hidden, inPlaylist
       <input ref={input} type="text" inputMode="search" enterKeyHint="search" autoComplete="off" maxLength={180} value={query}
         aria-label={searchLabel} placeholder={inPlaylist ? searchLabel : t('Что хотите послушать?')} onChange={event => onQuery(event.target.value)}
         onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); onCloseSearch() } }} />
-      {query && <button type="button" aria-label={t('Очистить поиск')} onClick={() => { onQuery(''); input.current?.focus() }}><Icon name="trash" /></button>}
-      <button type="button" aria-label={t('Закрыть поиск')} onClick={onCloseSearch}><Icon name="close" /></button>
+      <button type="button" aria-label={t('Очистить поиск')} disabled={!query} onClick={() => { onQuery(''); input.current?.focus() }}><Icon name="trash" /></button>
     </form>
   </nav>
 }
