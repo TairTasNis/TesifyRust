@@ -3,15 +3,20 @@ package app.tesify.desktop
 import android.os.Build
 import android.os.Bundle
 import android.view.View
+import android.view.WindowInsets
 import android.webkit.WebView
+import android.window.BackEvent
+import android.window.OnBackAnimationCallback
+import android.window.OnBackInvokedDispatcher
 import androidx.activity.OnBackPressedCallback
-import androidx.activity.BackEventCompat
 import androidx.activity.enableEdgeToEdge
+import androidx.annotation.RequiresApi
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 
 class MainActivity : TauriActivity() {
   private var contentWebView: WebView? = null
+  private var predictiveBack: OnBackAnimationCallback? = null
 
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
@@ -28,50 +33,81 @@ class MainActivity : TauriActivity() {
 
   }
 
+  private fun handleBack(fallback: () -> Unit) {
+    val webView = contentWebView
+    if (webView == null) {
+      fallback()
+      return
+    }
+    webView.evaluateJavascript("!window.dispatchEvent(new Event('tesify:back', { cancelable: true }))") { handled ->
+      if (handled != "true") {
+        if (webView.canGoBack()) webView.goBack() else fallback()
+      }
+    }
+  }
+
   private val overlayBack = object : OnBackPressedCallback(true) {
-      override fun handleOnBackStarted(backEvent: BackEventCompat) {
-        contentWebView?.evaluateJavascript("window.dispatchEvent(new Event('tesify:back-start'))", null)
-      }
-
-      override fun handleOnBackProgressed(backEvent: BackEventCompat) {
-        val progress = backEvent.progress.coerceIn(0f, 1f)
-        contentWebView?.evaluateJavascript("window.dispatchEvent(new CustomEvent('tesify:back-progress',{detail:$progress}))", null)
-      }
-
-      override fun handleOnBackCancelled() {
-        contentWebView?.evaluateJavascript("window.dispatchEvent(new Event('tesify:back-cancel'))", null)
-      }
-
-      override fun handleOnBackPressed() {
-        val webView = contentWebView
-        if (webView == null) {
-          goBack(null)
-        } else {
-          webView.evaluateJavascript("!window.dispatchEvent(new Event('tesify:back', { cancelable: true }))") { handled ->
-            if (handled != "true") goBack(webView)
-          }
-        }
-      }
-
-      private fun goBack(webView: WebView?) {
-        if (webView?.canGoBack() == true) {
-          webView.goBack()
-          return
-        }
+    override fun handleOnBackPressed() {
+      handleBack {
         isEnabled = false
         onBackPressedDispatcher.onBackPressed()
         isEnabled = true
       }
+    }
+  }
+
+  @RequiresApi(34)
+  private fun registerPredictiveBack() {
+    val callback = object : OnBackAnimationCallback {
+      private var closingKeyboard = false
+
+      private fun keyboardVisible() = window.decorView.rootWindowInsets?.isVisible(WindowInsets.Type.ime()) == true
+
+      override fun onBackStarted(backEvent: BackEvent) {
+        closingKeyboard = keyboardVisible()
+        if (!closingKeyboard) {
+          contentWebView?.evaluateJavascript("window.dispatchEvent(new Event('tesify:back-start'))", null)
+        }
+      }
+
+      override fun onBackProgressed(backEvent: BackEvent) {
+        if (closingKeyboard) return
+        val progress = backEvent.progress.coerceIn(0f, 1f)
+        contentWebView?.evaluateJavascript("window.dispatchEvent(new CustomEvent('tesify:back-progress',{detail:$progress}))", null)
+      }
+
+      override fun onBackCancelled() {
+        if (!closingKeyboard) {
+          contentWebView?.evaluateJavascript("window.dispatchEvent(new Event('tesify:back-cancel'))", null)
+        }
+        closingKeyboard = false
+      }
+
+      override fun onBackInvoked() {
+        if (closingKeyboard || keyboardVisible()) {
+          closingKeyboard = false
+          window.insetsController?.hide(WindowInsets.Type.ime())
+        } else {
+          handleBack { if (!isTaskRoot || !moveTaskToBack(false)) finishAfterTransition() }
+        }
+      }
+    }
+    // Register with the window ahead of WebView navigation so progress reaches the page.
+    onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_OVERLAY, callback)
+    predictiveBack = callback
   }
 
   override fun onPostResume() {
     super.onPostResume()
-    // Handle overlays before Tauri's default WebView history navigation.
-    onBackPressedDispatcher.addCallback(overlayBack)
+    if (Build.VERSION.SDK_INT >= 34) registerPredictiveBack()
+    else onBackPressedDispatcher.addCallback(overlayBack)
   }
 
   override fun onPause() {
-    overlayBack.remove()
+    if (Build.VERSION.SDK_INT >= 34) {
+      predictiveBack?.let { onBackInvokedDispatcher.unregisterOnBackInvokedCallback(it) }
+      predictiveBack = null
+    } else overlayBack.remove()
     super.onPause()
   }
 
