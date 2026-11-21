@@ -1,12 +1,12 @@
 .mobile-tabs {
   --tab-inset: 4px;
   --tab-width: calc((100% - 2 * var(--tab-inset)) / 4);
-  --glass: #e2ebf4;
-  --glass-depth: #b4c7df;
-  --glass-edge: #faffffb8;
-  --glass-lens: #ffffffa3;
-  --tab-ink: #3c4d65;
-  --tab-active: #10233d;
+  --glass: #ffffff31;
+  --glass-sheen: #ffffff70;
+  --glass-edge: #00000016;
+  --glass-lens: #ffffff9c;
+  --tab-ink: #505050;
+  --tab-active: #171717;
   position: absolute;
   z-index: 3;
   inset: auto max(14px, env(safe-area-inset-right)) calc(9px + env(safe-area-inset-bottom, 0px)) max(14px, env(safe-area-inset-left));
@@ -19,19 +19,19 @@
   border: 1px solid var(--glass-edge);
   border-radius: 28px;
   isolation: isolate;
-  background: radial-gradient(ellipse at 50% 105%, color-mix(in srgb, var(--glass-depth) 78%, transparent), transparent 77%), color-mix(in srgb, var(--glass) 76%, transparent);
-  box-shadow: inset 0 1px 1px #fff6, inset 0 -1px 0 #486e9c22, 0 4px 16px #0c1b312c;
-  backdrop-filter: blur(20px) saturate(150%);
+  background: linear-gradient(165deg, var(--glass-sheen), transparent 56%), var(--glass);
+  box-shadow: inset 0 1px 1px #fffc, inset 0 -1px 1px #0000000d, 0 4px 16px #00000020;
+  backdrop-filter: blur(18px);
   user-select: none;
   -webkit-touch-callout: none;
 }
 :root[data-theme="dark"] .mobile-tabs {
-  --glass: #202936;
-  --glass-depth: #163557;
-  --glass-edge: #becdd63d;
-  --glass-lens: #d9eeff28;
-  --tab-ink: #c2d0e3;
-  --tab-active: #f5faff;
+  --glass: #16161650;
+  --glass-sheen: #ffffff1b;
+  --glass-edge: #ffffff32;
+  --glass-lens: #ffffff29;
+  --tab-ink: #d0d0d0;
+  --tab-active: #ffffff;
   box-shadow: inset 0 1px 1px #fff2, inset 0 -1px 0 #ffffff12, 0 4px 19px #0007;
 }
 .mobile-tab-lens {
@@ -40,7 +40,7 @@
   width: var(--tab-width);
   border-radius: 23px;
   background: linear-gradient(150deg, var(--glass-lens), color-mix(in srgb, var(--glass-lens) 75%, transparent));
-  box-shadow: inset 0 1px 1px #fff5, inset 0 -1px 1px #fff3, 0 1px 5px #16335420;
+  box-shadow: inset 0 1px 1px #fff6, inset 0 -1px 1px #0000000a, 0 1px 5px #00000021;
   pointer-events: none;
   transition: transform var(--motion-base) var(--ease-in-out), opacity var(--motion-fast) ease;
 }

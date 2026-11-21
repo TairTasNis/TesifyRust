@@ -131,7 +131,7 @@ function AppContent() {
     setPlayerOpen(false)
     setLyricsOpen(false)
     setKeepLyrics(false)
-    transition.clearPreview()
+    transition.open()
     const hash = `#${routeKey(next)}`
     const history = window.history
     const state = { tesifyPrevious: route }

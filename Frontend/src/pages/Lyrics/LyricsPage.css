@@ -2,7 +2,7 @@
 .lyrics-page:not(:has(.lyrics-background)) { background: #121212; }
 .lyrics-page[data-closing] { opacity: 0; filter: blur(3px); transition-duration: 180ms; pointer-events: none; }
 @starting-style { .lyrics-page { opacity: 0; filter: blur(3px); } }
-@media (prefers-reduced-motion: no-preference) { @starting-style { html:not([data-input="keyboard"]) .lyrics-page { transform: translateY(10px) scale(.99); } } html:not([data-input="keyboard"]) .lyrics-page[data-closing] { transform: translateX(100%); } }
+@media (prefers-reduced-motion: no-preference) { @starting-style { html:not([data-input="keyboard"]) .lyrics-page { transform: translateY(10px) scale(.99); } } html:not([data-input="keyboard"]) .lyrics-page[data-closing] { transform: translateY(10px) scale(.99); } }
 .lyrics-background, .lyrics-background-base, .lyrics-background-art, .lyrics-background-shade { position: absolute; z-index: -1; inset: 0; pointer-events: none; }
 .lyrics-background { overflow: hidden; background: #23383f; }
 .lyrics-background-base { background: radial-gradient(ellipse at 20% 30%, #52626f, transparent 65%), radial-gradient(ellipse at 85% 80%, #345f63, transparent 70%), #26353b; }

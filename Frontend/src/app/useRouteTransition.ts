@@ -4,30 +4,59 @@ import { routeKey } from './navigation'
 import type { Route } from './navigation'
 
 const distance = .72
+const visible = 'translate3d(0, 0, 0)'
+const offscreen = 'translate3d(100%, 0, 0)'
+const slideDuration = 280
 
 export function useRouteTransition(route: Route) {
   const surface = useRef<HTMLDivElement>(null)
   const motion = useRef<Animation | null>(null)
   const gesture = useRef(false)
   const closing = useRef(false)
+  const entering = useRef(false)
   const [preview, setPreview] = useState<Route | null>(null)
 
   useLayoutEffect(() => {
     const node = surface.current
-    if (node) {
-      node.style.removeProperty('transform')
-      delete node.dataset.backMoving
+    if (entering.current) {
+      entering.current = false
+      if (node) slide(node, visible, slideDuration, () => reset(node), offscreen)
+      else setPreview(null)
     }
-    return () => { motion.current?.cancel(); motion.current = null; gesture.current = false; closing.current = false }
+    return () => {
+      motion.current?.cancel()
+      motion.current = null
+      gesture.current = false
+      closing.current = false
+      if (node) clearStyle(node)
+    }
   }, [route.page, route.playlistId])
 
-  function slide(node: HTMLDivElement, to: string, duration: number, finish: () => void) {
-    const from = getComputedStyle(node).transform
+  function clearStyle(node: HTMLDivElement) {
+    node.style.removeProperty('transform')
+    delete node.dataset.backMoving
+    delete node.dataset.routeSliding
+  }
+
+  function reset(node: HTMLDivElement) {
     motion.current?.cancel()
-    const easing = getComputedStyle(node).getPropertyValue('--ease-out').trim()
+    motion.current = null
+    clearStyle(node)
+    setPreview(null)
+  }
+
+  function slide(node: HTMLDivElement, to: string, duration: number, finish: () => void, from = getComputedStyle(node).transform) {
+    motion.current?.cancel()
+    const easing = getComputedStyle(node).getPropertyValue('--ease-drawer').trim()
+    node.dataset.routeSliding = ''
     const animation = node.animate([{ transform: from }, { transform: to }], { duration, easing, fill: 'forwards' })
     motion.current = animation
     void animation.finished.then(() => { if (motion.current === animation) finish() }, () => {})
+  }
+
+  function open() {
+    entering.current = canAnimate() && typeof surface.current?.animate === 'function'
+    setPreview(entering.current ? route : null)
   }
 
   function start(destination: Route) {
@@ -38,6 +67,7 @@ export function useRouteTransition(route: Route) {
     motion.current = null
     node.style.transform = current
     node.dataset.backMoving = ''
+    node.dataset.routeSliding = ''
     gesture.current = true
     setPreview(destination)
   }
@@ -52,25 +82,22 @@ export function useRouteTransition(route: Route) {
     const node = surface.current
     if (!node || !gesture.current) return
     gesture.current = false
-    slide(node, 'translate3d(0, 0, 0)', 200, () => {
-      node.style.removeProperty('transform')
-      delete node.dataset.backMoving
-      motion.current?.cancel()
-      motion.current = null
-      setPreview(null)
-    })
+    slide(node, visible, 230, () => reset(node))
   }
 
   function close(destination: Route, done: () => void) {
     const node = surface.current
     if (closing.current) return
-    if (!node || (!gesture.current && !canAnimate()) || routeKey(destination) === routeKey(route)) { done(); return }
+    if (!node || typeof node.animate !== 'function' || (!gesture.current && !canAnimate()) || routeKey(destination) === routeKey(route)) { done(); return }
     closing.current = true
     gesture.current = false
     node.dataset.backMoving = ''
     setPreview(destination)
-    slide(node, 'translate3d(100%, 0, 0)', 230, done)
+    const from = getComputedStyle(node).transform
+    const offset = from === 'none' ? 0 : new DOMMatrixReadOnly(from).m41
+    const remaining = Math.min(1, Math.max(0, 1 - offset / (node.offsetWidth || 1)))
+    slide(node, offscreen, Math.round(145 + (slideDuration - 145) * remaining), done, from)
   }
 
-  return { surface, preview, clearPreview: () => setPreview(null), start, progress, cancel, close }
+  return { surface, preview, clearPreview: () => setPreview(null), open, start, progress, cancel, close }
 }
