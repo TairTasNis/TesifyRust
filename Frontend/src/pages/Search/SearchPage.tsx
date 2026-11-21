@@ -109,7 +109,7 @@ export default function SearchPage({ onOpen, mobileSearch }: { onOpen: OpenCatal
       </>
   return <main ref={page} className={`workspace search-page${mobileSearch ? ' search-page--mobile' : ''}`} aria-label={t("Поиск")}>
     {mobileSearch ? <>
-      <div ref={mobileResults} className="search-mobile-results">
+      <div ref={mobileResults} className="search-mobile-results" data-dock-scroll>
         <header className="search-header"><h1>{t("Поиск")}</h1></header>
         {results}
       </div>

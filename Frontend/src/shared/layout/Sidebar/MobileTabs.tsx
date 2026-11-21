@@ -21,13 +21,18 @@ type Props = {
   activePage: PageId
   mode: MobileTabsMode
   query: string
-  onMode: (mode: MobileTabsMode) => void
+  hidden: boolean
+  inPlaylist: boolean
+  left: 'home' | 'library'
+  right: 'settings' | 'library'
+  onOpenSearch: () => void
+  onCloseSearch: () => void
   onQuery: (query: string) => void
   onSubmit: () => void
   onNavigate: (page: PageId) => void
 }
 
-export default function MobileTabs({ activePage, mode, query, onMode, onQuery, onSubmit, onNavigate }: Props) {
+export default function MobileTabs({ activePage, mode, query, hidden, inPlaylist, left, right, onOpenSearch, onCloseSearch, onQuery, onSubmit, onNavigate }: Props) {
   const t = useTranslation()
   const index = tabs.findIndex(tab => tab.id === activePage)
   const nav = useRef<HTMLElement>(null)
@@ -74,27 +79,16 @@ export default function MobileTabs({ activePage, mode, query, onMode, onQuery, o
   }, [])
 
   useEffect(() => {
+    if (mode !== 'search') return
     function outside(event: Event) {
-      if (event.target instanceof Node && !nav.current?.contains(event.target)) onMode('compact')
-    }
-    function playlistScroll(event: Event) {
-      if (event.target instanceof Element && event.target.closest('.playlist-page')) onMode('compact')
+      if (event.target instanceof Node && !nav.current?.contains(event.target)) onCloseSearch()
     }
     document.addEventListener('click', outside, true)
-    document.addEventListener('wheel', outside, { capture: true, passive: true })
-    document.addEventListener('scroll', playlistScroll, { capture: true, passive: true })
-    return () => {
-      document.removeEventListener('click', outside, true)
-      document.removeEventListener('wheel', outside, true)
-      document.removeEventListener('scroll', playlistScroll, true)
-    }
-  }, [onMode])
+    return () => document.removeEventListener('click', outside, true)
+  }, [mode, onCloseSearch])
 
   function openSearch() {
-    flushSync(() => {
-      onNavigate('search')
-      onMode('search')
-    })
+    flushSync(onOpenSearch)
     input.current?.focus({ preventScroll: true })
   }
 
@@ -103,10 +97,7 @@ export default function MobileTabs({ activePage, mode, query, onMode, onQuery, o
     if (animate) enlarge(duration)
     const page = tabs[item].id
     if (page === 'search') openSearch()
-    else {
-      onMode('tabs')
-      onNavigate(page)
-    }
+    else onNavigate(page)
   }
 
   function pointerDown(event: PointerEvent<HTMLButtonElement>, item: number) {
@@ -159,13 +150,14 @@ export default function MobileTabs({ activePage, mode, query, onMode, onQuery, o
     else choose(Math.max(0, Math.min(tabs.length - 1, Math.round(press.index + (event.clientX - press.x) / press.step))), false)
   }
 
-  return <nav ref={nav} className="mobile-tabs" data-mode={mode} data-holding={holding || undefined} aria-label={t('Основная навигация')}>
+  const searchLabel = t(inPlaylist ? 'Поиск в плейлисте' : 'Поиск в Spotify')
+  return <nav ref={nav} className="mobile-tabs" data-mode={mode} data-holding={holding || undefined} inert={hidden} aria-label={t('Основная навигация')}>
     <span className="mobile-tabs-track" aria-hidden="true" />
     <span ref={lens} className="mobile-tab-lens" hidden={index < 0} aria-hidden="true"><span ref={fill} /></span>
     {tabs.map(({ id, label, icon }, i) => {
-      const side = id === 'home' || id === 'settings'
+      const side = id === left ? 'left' : id === right ? 'right' : undefined
       return <button key={id} type="button" className={`mobile-tab mobile-tab--${id}`} aria-label={t(label)}
-        aria-current={activePage === id ? 'page' : undefined} inert={mode === 'search' || (mode === 'compact' && !side)}
+        data-side={side} aria-current={activePage === id ? 'page' : undefined} inert={mode === 'search' || (mode === 'compact' && !side)}
         onPointerDown={event => pointerDown(event, i)} onPointerMove={pointerMove} onPointerUp={event => finish(event, false)}
         onPointerCancel={event => finish(event, true)} onLostPointerCapture={event => finish(event, true)}
         onClick={event => { if (!suppressClick.current || !event.detail) choose(i); suppressClick.current = false }}>
@@ -174,21 +166,21 @@ export default function MobileTabs({ activePage, mode, query, onMode, onQuery, o
     })}
 
     <span className="mobile-search-glass" aria-hidden="true" />
-    <button type="button" className="mobile-search-open" inert={mode !== 'compact'} aria-label={t('Поиск')} onClick={openSearch}>
-      <Icon name="search" /><span>{query || t('Поиск')}</span>
+    <button type="button" className="mobile-search-open" inert={mode !== 'compact'} aria-label={searchLabel} onClick={openSearch}>
+      <Icon name="search" /><span>{query || t(inPlaylist ? 'Поиск в плейлисте' : 'Поиск')}</span>
     </button>
     <form className="mobile-search-form" role="search" inert={mode !== 'search'} onSubmit={event => {
       event.preventDefault()
       input.current?.blur()
       onSubmit()
-      onMode('compact')
+      onCloseSearch()
     }}>
       <Icon name="search" />
       <input ref={input} type="text" inputMode="search" enterKeyHint="search" autoComplete="off" maxLength={180} value={query}
-        aria-label={t('Поиск в Spotify')} placeholder={t('Что хотите послушать?')} onChange={event => onQuery(event.target.value)}
-        onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); onMode('compact') } }} />
+        aria-label={searchLabel} placeholder={inPlaylist ? searchLabel : t('Что хотите послушать?')} onChange={event => onQuery(event.target.value)}
+        onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); onCloseSearch() } }} />
       {query && <button type="button" aria-label={t('Очистить поиск')} onClick={() => { onQuery(''); input.current?.focus() }}><Icon name="trash" /></button>}
-      <button type="button" aria-label={t('Закрыть поиск')} onClick={() => onMode('compact')}><Icon name="close" /></button>
+      <button type="button" aria-label={t('Закрыть поиск')} onClick={onCloseSearch}><Icon name="close" /></button>
     </form>
   </nav>
 }

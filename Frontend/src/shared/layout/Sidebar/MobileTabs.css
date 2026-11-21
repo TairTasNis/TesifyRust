@@ -23,9 +23,10 @@
   --glass-shadow: inset 0 1px 1px #fffc, inset 0 -1px 1px #0000000d, 0 4px 16px #00000020;
   user-select: none;
   -webkit-touch-callout: none;
-  transition: max-width var(--motion-modal) var(--ease-drawer);
+  transition: max-width var(--motion-modal) var(--ease-drawer), transform var(--motion-modal) var(--ease-drawer);
 }
 .mobile-tabs[data-mode="search"] { max-width: 100%; }
+.app-window[data-dock-hidden] .mobile-tabs { transform: translateY(calc(100% + 12px + env(safe-area-inset-bottom, 0px))); }
 :root[data-theme="dark"] .mobile-tabs {
   --glass: #16161650;
   --glass-sheen: #ffffff1b;
@@ -94,12 +95,14 @@
   transform: translate(-50%, -50%);
   transition: opacity var(--motion-base) ease;
 }
-.mobile-tabs:not([data-mode="tabs"]) :is(.mobile-tabs-track, .mobile-tab-lens, .mobile-tab--search, .mobile-tab--library),
-.mobile-tabs[data-mode="search"] :is(.mobile-tab--home, .mobile-tab--settings) { opacity: 0; }
+.mobile-tabs:not([data-mode="tabs"]) :is(.mobile-tabs-track, .mobile-tab-lens, .mobile-tab:not([data-side])),
+.mobile-tabs[data-mode="search"] .mobile-tab { opacity: 0; }
 .mobile-tabs[data-mode="search"] .mobile-tab-lens { transition-delay: 0ms, 70ms; }
-.mobile-tabs:not([data-mode="tabs"]) .mobile-tab--home { transform: translateX(calc(-50% + var(--tab-height) / 2 - var(--tab-inset))); }
-.mobile-tabs:not([data-mode="tabs"]) .mobile-tab--settings { transform: translateX(calc(50% - var(--tab-height) / 2 + var(--tab-inset))); }
-.mobile-tabs[data-mode="compact"] :is(.mobile-tab--home, .mobile-tab--settings)::before { opacity: 1; }
+.mobile-tabs:not([data-mode="tabs"]) [data-side="left"] { --slot: 0; transform: translateX(calc(-50% - var(--slot) * 100% + var(--tab-height) / 2 - var(--tab-inset))); }
+.mobile-tabs:not([data-mode="tabs"]) [data-side="right"] { --slot: 0; transform: translateX(calc(50% + var(--slot) * 100% - var(--tab-height) / 2 + var(--tab-inset))); }
+.mobile-tabs:not([data-mode="tabs"]) .mobile-tab--library[data-side="left"] { --slot: 2; }
+.mobile-tabs:not([data-mode="tabs"]) .mobile-tab--library[data-side="right"] { --slot: 1; }
+.mobile-tabs[data-mode="compact"] .mobile-tab[data-side]::before { opacity: 1; }
 
 .mobile-search-glass {
   opacity: 0;

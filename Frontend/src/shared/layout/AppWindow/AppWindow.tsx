@@ -12,10 +12,11 @@ type AppWindowProps = {
   isLyrics?: boolean
   isPlayer?: boolean
   mobile: boolean
+  mobileDockHidden?: boolean
   appWindow?: ReturnType<typeof useAppWindow>
 }
 
-export default function AppWindow({ children, isAbout, hasPlayer = false, isLyrics = false, isPlayer = false, mobile, appWindow }: AppWindowProps) {
+export default function AppWindow({ children, isAbout, hasPlayer = false, isLyrics = false, isPlayer = false, mobile, mobileDockHidden, appWindow }: AppWindowProps) {
   const t = useTranslation()
   const localWindow = useAppWindow()
   const window = appWindow ?? localWindow
@@ -30,7 +31,7 @@ export default function AppWindow({ children, isAbout, hasPlayer = false, isLyri
   return (
     <div className={classes}>
       {window.windowState === 'open' ? (
-        <div className={`app-window${hasPlayer ? ' app-window--with-player' : ''}${isLyrics ? ' app-window--lyrics' : ''}${mobile && isAbout ? ' app-window--about' : ''}`}>
+        <div className={`app-window${hasPlayer ? ' app-window--with-player' : ''}${isLyrics ? ' app-window--lyrics' : ''}${mobile && isAbout ? ' app-window--about' : ''}`} data-dock-hidden={mobile && mobileDockHidden || undefined}>
           {window.isNative && !window.isAndroid && !isLyrics && !isPlayer && <div className="window-drag-region" data-tauri-drag-region aria-hidden="true" />}
           {children}
           {!mobile && !isLyrics && !isPlayer && (!isAbout || window.isNative) && (

@@ -27,6 +27,7 @@ import { useTranslation } from '../shared/preferences/i18n'
 import { routeFromHash, routeKey, pageTitles } from './navigation'
 import type { PageId, Route } from './navigation'
 import { useRouteTransition } from './useRouteTransition'
+import { useMobileDockScroll } from './useMobileDockScroll'
 import './RouteTransition.css'
 
 const routeParents: Partial<Record<PageId, PageId>> = {
@@ -48,11 +49,20 @@ function AppContent() {
   const [lyricsOpen, setLyricsOpen] = useState(false)
   const [keepLyrics, setKeepLyrics] = useState(false)
   const [playerOpen, setPlayerOpen] = useState(false)
-  const [tabMode, setTabMode] = useState<MobileTabsMode>('tabs')
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [homeCompact, setHomeCompact] = useState(() => window.location.hash === '#home')
   const [mobileQuery, setMobileQuery] = useState(() => savedSearch().query)
   const [mobileSubmitCount, setMobileSubmitCount] = useState(0)
+  const [playlistSearch, setPlaylistSearch] = useState({ route: '', query: '' })
   const backPending = useRef(false)
   const activePage = route.page
+  const activeRoute = routeKey(route)
+  const inPlaylist = activePage === 'playlist' || activePage === 'spotify-playlist'
+  const compact = inPlaylist || activePage === 'settings' || activePage === 'search' || (activePage === 'home' && homeCompact)
+  const tabMode: MobileTabsMode = searchOpen ? 'search' : compact ? 'compact' : 'tabs'
+  const dockHidden = useMobileDockScroll(activeRoute, mobile && !searchOpen && !playerOpen && !lyricsOpen && (inPlaylist || activePage === 'search'))
+  const closeSearch = useCallback(() => setSearchOpen(false), [])
+  const query = inPlaylist ? (playlistSearch.route === activeRoute ? playlistSearch.query : '') : mobileQuery
   const trackId = player.current?.id
   const playlistId = player.playlistId
   const dismissOverlay = useCallback(() => {
@@ -94,9 +104,11 @@ function AppContent() {
     const syncHistory = () => {
       backPending.current = false
       const nextRoute = routeFromHash()
-      if (routeKey(nextRoute) !== routeKey(route)) transition.clearPreview()
+      if (routeKey(nextRoute) !== routeKey(route)) {
+        transition.clearPreview()
+        closeSearch()
+      }
       setRoute(current => routeKey(current) === routeKey(nextRoute) ? current : nextRoute)
-      if (nextRoute.page !== 'search') setTabMode(current => current === 'search' ? 'compact' : current)
       const overlay = window.history.state?.tesifyOverlay
       setPlayerOpen(Boolean(trackId) && (overlay === 'player' || overlay === 'lyrics'))
       setLyricsOpen(Boolean(trackId) && overlay === 'lyrics')
@@ -109,7 +121,7 @@ function AppContent() {
       window.removeEventListener('popstate', syncHistory)
       window.removeEventListener('hashchange', syncHistory)
     }
-  }, [route, trackId])
+  }, [route, trackId, closeSearch])
 
   useLayoutEffect(() => {
     if (window.history.state?.tesifyOverlay) window.history.replaceState(null, '')
@@ -133,6 +145,8 @@ function AppContent() {
 
   function navigate(page: PageId, id?: string, animated = true) {
     const next = { page, playlistId: id }
+    if (mobile && page === 'home') setHomeCompact(true)
+    if (mobile) closeSearch()
     if (routeKey(next) === routeKey(route)) return
     setPlayerOpen(false)
     setLyricsOpen(false)
@@ -177,7 +191,7 @@ function AppContent() {
         else closePlayer()
       } else if (mobile && tabMode === 'search') {
         event.preventDefault()
-        setTabMode('compact')
+        closeSearch()
       } else if (mobile && previousRoute()) {
         event.preventDefault()
         leavePage()
@@ -199,7 +213,7 @@ function AppContent() {
       window.removeEventListener('tesify:back-progress', progress)
       window.removeEventListener('tesify:back-cancel', transition.cancel)
     }
-  }, [route, mobile, tabMode, closeLyrics, closePlayer, transition])
+  }, [route, mobile, tabMode, closeLyrics, closePlayer, closeSearch, transition])
 
   const openCatalog: OpenCatalog = (kind, id) => {
     navigate(kind === 'playlist' ? 'spotify-playlist' : kind, id)
@@ -208,8 +222,10 @@ function AppContent() {
   const playerExpanded = mobile && playerOpen
   const lyricsPresent = lyricsOpen || (playerExpanded && keepLyrics)
   const overlayOpen = lyricsOpen || playerExpanded
-  function page({ page, playlistId }: Route) {
+  function page(item: Route) {
+    const { page, playlistId } = item
     const id = playlistId ?? ''
+    const trackQuery = mobile ? (playlistSearch.route === routeKey(item) ? playlistSearch.query : '') : undefined
     switch (page) {
       case 'about': return <AboutPage onBack={() => leavePage()} />
       case 'home': return <HomePage />
@@ -217,24 +233,27 @@ function AppContent() {
       case 'search': return <SearchPage onOpen={openCatalog} mobileSearch={mobile ? { query: mobileQuery, submitCount: mobileSubmitCount } : undefined} />
       case 'artist': return <ArtistPage id={id} onOpen={openCatalog} onBack={() => leavePage()} />
       case 'album': return <AlbumPage id={id} onOpen={openCatalog} onBack={() => leavePage()} />
-      case 'spotify-playlist': return <SpotifyPlaylistPage id={id} onOpen={openCatalog} onBack={() => leavePage()} />
+      case 'spotify-playlist': return <SpotifyPlaylistPage id={id} onOpen={openCatalog} onBack={() => leavePage()} trackQuery={trackQuery} />
       case 'library': return <LibraryPage onOpenPlaylist={id => navigate('playlist', id)} onOpenCatalog={openCatalog} onOpenDownloads={() => navigate('downloads')} />
       case 'downloads': return <DownloadsPage onBack={() => leavePage()} />
-      case 'playlist': return <PlaylistPage playlistId={id} onBack={() => leavePage()} onOpen={openCatalog} />
+      case 'playlist': return <PlaylistPage playlistId={id} onBack={() => leavePage()} onOpen={openCatalog} trackQuery={trackQuery} />
     }
   }
   const routes = transition.preview && routeKey(transition.preview) !== routeKey(route) ? [transition.preview, route] : [route]
 
   return (
-    <AppWindow appWindow={appWindow} isAbout={activePage === 'about'} hasPlayer={Boolean(player.current)} isLyrics={lyricsPresent} isPlayer={playerExpanded} mobile={mobile}>
+    <AppWindow appWindow={appWindow} isAbout={activePage === 'about'} hasPlayer={Boolean(player.current)} isLyrics={lyricsPresent} isPlayer={playerExpanded} mobile={mobile} mobileDockHidden={dockHidden}>
       <div style={{ display: 'contents' }} inert={mobile && overlayOpen} aria-hidden={mobile && overlayOpen || undefined}>
         {routes.map(item => {
           const preview = item !== route
           return <div key={routeKey(item)} className="route-surface" ref={preview ? undefined : transition.surface}
             data-preview={preview || undefined} inert={preview} aria-hidden={preview || undefined}>{page(item)}</div>
         })}
-        {activePage !== 'about' && (mobile ? <MobileTabs activePage={sidebarPage} mode={tabMode} query={mobileQuery}
-          onMode={setTabMode} onQuery={setMobileQuery} onSubmit={() => setMobileSubmitCount(count => count + 1)}
+        {activePage !== 'about' && (mobile ? <MobileTabs activePage={sidebarPage} mode={tabMode} query={query} hidden={dockHidden} inPlaylist={inPlaylist}
+          left={activePage === 'home' ? 'library' : 'home'} right={activePage === 'settings' ? 'library' : 'settings'}
+          onOpenSearch={() => { if (!inPlaylist) navigate('search', undefined, false); setSearchOpen(true) }} onCloseSearch={closeSearch}
+          onQuery={value => inPlaylist ? setPlaylistSearch({ route: activeRoute, query: value }) : setMobileQuery(value)}
+          onSubmit={() => { if (!inPlaylist) setMobileSubmitCount(count => count + 1) }}
           onNavigate={page => navigate(page, undefined, false)} /> : <Sidebar activePage={sidebarPage} onNavigate={navigate} />)}
       </div>
       {mobile && player.current && <NowPlayingPage shown={playerExpanded} active={playerExpanded && !lyricsOpen} onClose={closePlayer}

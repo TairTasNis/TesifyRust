@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import TrackArtistLinks from '../../shared/catalog/ArtistLinks/TrackArtistLinks'
 import TrackMenu from '../../shared/catalog/TrackMenu/TrackMenu'
 import { useTrackMenu } from '../../shared/catalog/TrackMenu/useTrackMenu'
+import { trackFilter } from '../../shared/catalog/trackFilter'
 import type { OpenCatalog } from '../../shared/catalog/types'
 import { errorMessage } from '../../shared/lib/backend'
 import { usePlayback } from '../../shared/playback/PlaybackProvider'
@@ -23,9 +24,9 @@ import { nextTrackSort, sortPlaylistTracks } from './sorting'
 import type { TrackSort, TrackSortKey } from './sorting'
 import './PlaylistPage.css'
 
-type Props = { playlistId: string; onBack: () => void; onOpen: OpenCatalog }
+type Props = { playlistId: string; onBack: () => void; onOpen: OpenCatalog; trackQuery?: string }
 
-export default function PlaylistPage({ playlistId, onBack, onOpen }: Props) {
+export default function PlaylistPage({ playlistId, onBack, onOpen, trackQuery }: Props) {
   const t = useTranslation()
   const player = usePlayback()
   const { reorderQueue } = player
@@ -57,7 +58,12 @@ export default function PlaylistPage({ playlistId, onBack, onOpen }: Props) {
 
   const entries = useMemo(() => sortPlaylistTracks(playlist?.tracks ?? [], sort), [playlist, sort])
   const tracks = useMemo(() => entries.map(({ track }) => track), [entries])
-  const menu = useTrackMenu(tracks)
+  const shown = useMemo(() => {
+    const matches = trackFilter(trackQuery ?? '')
+    return entries.map((entry, index) => ({ ...entry, index })).filter(({ track }) => matches(track.title, track.artist))
+  }, [entries, trackQuery])
+  const shownTracks = useMemo(() => shown.map(({ track }) => track), [shown])
+  const menu = useTrackMenu(shownTracks)
   const duration = playlist?.tracks.reduce((sum, track) => sum + (track.durationMs ?? 0), 0) ?? 0
 
   useEffect(() => {
@@ -69,7 +75,7 @@ export default function PlaylistPage({ playlistId, onBack, onOpen }: Props) {
   }
 
   return (
-    <main className="workspace playlist-page" aria-label={t("Плейлист")}>
+    <main className="workspace playlist-page" aria-label={t("Плейлист")} data-dock-scroll={trackQuery !== undefined || undefined}>
       <button className="playlist-back" onClick={onBack}><Icon name="back" />{t("Библиотека")}</button>
       {loading && !playlist ? <MusicLoader label={t("Загружаем плейлист")} /> : error || !playlist ? <div className="playlist-error" role="alert"><h1>{t("Не удалось открыть плейлист")}</h1><p>{error && t(error)}</p><Button variant="secondary" onClick={() => setRetry((value) => value + 1)}>{t("Попробовать снова")}</Button></div> : <>
         <header className="playlist-hero">
@@ -81,14 +87,15 @@ export default function PlaylistPage({ playlistId, onBack, onOpen }: Props) {
             <div className="playlist-actions"><Button variant="secondary" onClick={() => setEditing(true)}><Icon name="edit" />{t("Редактировать")}</Button><Button variant="ghost" className="playlist-delete" aria-label={t("Удалить плейлист")} onClick={() => { setDeleting(true); setDeleteError(null) }}><Icon name="trash" /></Button></div>
           </div>
         </header>
-        {tracks.length > 0 && <section className="playlist-tracks" aria-label={t("Треки плейлиста")}>
+        {!!trackQuery?.trim() && !shown.length && <p role="status">{t('Ничего не найдено')}</p>}
+        {shown.length > 0 && <section className="playlist-tracks" aria-label={t("Треки плейлиста")}>
           <TrackMenu state={menu} onOpen={onOpen} playlistId={playlistId} />
           <div className="track-table-scroll"><table className="track-table"><thead><tr>
             <TrackSortHeader column="index" label={t("Номер")} className="track-number" sort={sort} onSort={changeSort}>#</TrackSortHeader>
             <TrackSortHeader column="title" label={t("Название")} sort={sort} onSort={changeSort} />
             <TrackSortHeader column="added" label={t("Добавлено")} className="track-date-column" sort={sort} onSort={changeSort} />
             <TrackSortHeader column="duration" label={t("Длительность")} className="track-time" sort={sort} onSort={changeSort}><Icon name="clock" /></TrackSortHeader>
-          </tr></thead><tbody>{entries.map(({ track, originalIndex }, index) => {
+          </tr></thead><tbody>{shown.map(({ track, originalIndex, index }) => {
             const active = player.playlistId === playlistId && player.current?.id === track.id
             const loading = active && player.loading
             const added = formatAddedDate(track.sourceAddedAt ?? track.addedAt)
