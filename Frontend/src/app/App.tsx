@@ -7,7 +7,7 @@ import LyricsPage from '../pages/Lyrics/LyricsPage'
 import { getLyrics } from '../pages/Lyrics/api'
 import NowPlayingPage from '../pages/NowPlaying/NowPlayingPage'
 import PlaylistPage from '../pages/Playlist/PlaylistPage'
-import SearchPage from '../pages/Search/SearchPage'
+import SearchPage, { savedSearch } from '../pages/Search/SearchPage'
 import ArtistPage from '../pages/Artist/ArtistPage'
 import AlbumPage from '../pages/Album/AlbumPage'
 import SpotifyPlaylistPage from '../pages/SpotifyPlaylist/SpotifyPlaylistPage'
@@ -16,6 +16,8 @@ import type { OpenCatalog } from '../shared/catalog/types'
 import AppWindow from '../shared/layout/AppWindow/AppWindow'
 import { useAppWindow, useMobileLayout } from '../shared/layout/AppWindow/useAppWindow'
 import Sidebar from '../shared/layout/Sidebar/Sidebar'
+import MobileTabs from '../shared/layout/Sidebar/MobileTabs'
+import type { MobileTabsMode } from '../shared/layout/Sidebar/MobileTabs'
 import { useInputMode } from '../shared/lib/motion'
 import { PlaybackProvider, usePlayback } from '../shared/playback/PlaybackProvider'
 import MiniPlayer from '../shared/playback/MiniPlayer/MiniPlayer'
@@ -46,6 +48,9 @@ function AppContent() {
   const [lyricsOpen, setLyricsOpen] = useState(false)
   const [keepLyrics, setKeepLyrics] = useState(false)
   const [playerOpen, setPlayerOpen] = useState(false)
+  const [tabMode, setTabMode] = useState<MobileTabsMode>('tabs')
+  const [mobileQuery, setMobileQuery] = useState(() => savedSearch().query)
+  const [mobileSubmitCount, setMobileSubmitCount] = useState(0)
   const backPending = useRef(false)
   const activePage = route.page
   const trackId = player.current?.id
@@ -91,6 +96,7 @@ function AppContent() {
       const nextRoute = routeFromHash()
       if (routeKey(nextRoute) !== routeKey(route)) transition.clearPreview()
       setRoute(current => routeKey(current) === routeKey(nextRoute) ? current : nextRoute)
+      if (nextRoute.page !== 'search') setTabMode(current => current === 'search' ? 'compact' : current)
       const overlay = window.history.state?.tesifyOverlay
       setPlayerOpen(Boolean(trackId) && (overlay === 'player' || overlay === 'lyrics'))
       setLyricsOpen(Boolean(trackId) && overlay === 'lyrics')
@@ -125,13 +131,13 @@ function AppContent() {
     document.title = `Tesify — ${t(pageTitles[activePage])}`
   }, [activePage, t])
 
-  function navigate(page: PageId, id?: string) {
+  function navigate(page: PageId, id?: string, animated = true) {
     const next = { page, playlistId: id }
     if (routeKey(next) === routeKey(route)) return
     setPlayerOpen(false)
     setLyricsOpen(false)
     setKeepLyrics(false)
-    transition.open()
+    transition.open(animated)
     const hash = `#${routeKey(next)}`
     const history = window.history
     const state = { tesifyPrevious: route }
@@ -169,13 +175,16 @@ function AppContent() {
         event.preventDefault()
         if (window.history.state.tesifyOverlay === 'lyrics') closeLyrics()
         else closePlayer()
+      } else if (mobile && tabMode === 'search') {
+        event.preventDefault()
+        setTabMode('compact')
       } else if (mobile && previousRoute()) {
         event.preventDefault()
         leavePage()
       }
     }
     const start = () => {
-      if (!mobile || window.history.state?.tesifyOverlay || document.querySelector('dialog[open], .route-surface:not([inert]) .track-selection')) return
+      if (!mobile || tabMode === 'search' || window.history.state?.tesifyOverlay || document.querySelector('dialog[open], .route-surface:not([inert]) .track-selection')) return
       const previous = previousRoute()
       if (previous) transition.start(previous)
     }
@@ -190,7 +199,7 @@ function AppContent() {
       window.removeEventListener('tesify:back-progress', progress)
       window.removeEventListener('tesify:back-cancel', transition.cancel)
     }
-  }, [route, mobile, closeLyrics, closePlayer, transition])
+  }, [route, mobile, tabMode, closeLyrics, closePlayer, transition])
 
   const openCatalog: OpenCatalog = (kind, id) => {
     navigate(kind === 'playlist' ? 'spotify-playlist' : kind, id)
@@ -205,7 +214,7 @@ function AppContent() {
       case 'about': return <AboutPage onBack={() => leavePage()} />
       case 'home': return <HomePage />
       case 'settings': return <SettingsPage onAbout={mobile ? () => navigate('about') : undefined} />
-      case 'search': return <SearchPage onOpen={openCatalog} />
+      case 'search': return <SearchPage onOpen={openCatalog} mobileSearch={mobile ? { query: mobileQuery, submitCount: mobileSubmitCount } : undefined} />
       case 'artist': return <ArtistPage id={id} onOpen={openCatalog} onBack={() => leavePage()} />
       case 'album': return <AlbumPage id={id} onOpen={openCatalog} onBack={() => leavePage()} />
       case 'spotify-playlist': return <SpotifyPlaylistPage id={id} onOpen={openCatalog} onBack={() => leavePage()} />
@@ -224,7 +233,9 @@ function AppContent() {
           return <div key={routeKey(item)} className="route-surface" ref={preview ? undefined : transition.surface}
             data-preview={preview || undefined} inert={preview} aria-hidden={preview || undefined}>{page(item)}</div>
         })}
-        {activePage !== 'about' && <Sidebar activePage={sidebarPage} mobile={mobile} onNavigate={navigate} />}
+        {activePage !== 'about' && (mobile ? <MobileTabs activePage={sidebarPage} mode={tabMode} query={mobileQuery}
+          onMode={setTabMode} onQuery={setMobileQuery} onSubmit={() => setMobileSubmitCount(count => count + 1)}
+          onNavigate={page => navigate(page, undefined, false)} /> : <Sidebar activePage={sidebarPage} onNavigate={navigate} />)}
       </div>
       {mobile && player.current && <NowPlayingPage shown={playerExpanded} active={playerExpanded && !lyricsOpen} onClose={closePlayer}
         onLyrics={openLyrics} onOpen={openCatalog} />}

@@ -1,7 +1,7 @@
 {
   "name": "tesify",
   "private": true,
-  "version": "26.11.0-dev.10",
+  "version": "26.11.0-dev.11",
   "scripts": {
     "setup:bin": "node scripts/setup-bin.mjs",
     "postinstall": "node scripts/setup-bin.mjs",

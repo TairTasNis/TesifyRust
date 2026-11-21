@@ -3,7 +3,6 @@ import Icon from '../../ui/Icon/Icon'
 import type { IconName } from '../../ui/Icon/Icon'
 import Logo from '../../ui/Logo/Logo'
 import type { PageId } from '../../../app/navigation'
-import MobileTabs from './MobileTabs'
 import './Sidebar.css'
 
 const navigation: { id: PageId; label: string; icon: IconName }[] = [
@@ -11,18 +10,15 @@ const navigation: { id: PageId; label: string; icon: IconName }[] = [
   { id: 'search', label: 'Поиск', icon: 'search' },
   { id: 'library', label: 'Библиотека', icon: 'library' },
 ]
-const mobileTabs: typeof navigation = [{ id: 'home', label: 'Главная', icon: 'home' }, ...navigation.slice(1), { id: 'settings', label: 'Настройки', icon: 'settings' }]
 
 type SidebarProps = {
   activePage: PageId
-  mobile: boolean
   onNavigate: (page: PageId) => void
 }
 
-export default function Sidebar({ activePage, mobile, onNavigate }: SidebarProps) {
+export default function Sidebar({ activePage, onNavigate }: SidebarProps) {
   const t = useTranslation()
   const selectedIndex = navigation.findIndex(({ id }) => id === activePage)
-  if (mobile) return <MobileTabs tabs={mobileTabs} activePage={activePage} onNavigate={onNavigate} />
   return (
     <aside className="sidebar" aria-label={t("Боковая панель")}>
       <button

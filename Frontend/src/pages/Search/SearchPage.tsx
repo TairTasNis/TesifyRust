@@ -14,13 +14,14 @@ import PlaylistCover from '../../shared/ui/PlaylistCover/PlaylistCover'
 import { cachedSearch, searchSpotify } from '../../shared/catalog/search'
 import './SearchPage.css'
 
-function savedSearch(): { query: string; category: SearchCategory } {
+export function savedSearch(): { query: string; category: SearchCategory } {
   try { const saved = JSON.parse(sessionStorage.getItem('tesify.search') || '{}'); return { query: typeof saved.query === 'string' ? saved.query.slice(0, 180) : '', category: categories.some(item => item.id === saved.category) ? saved.category : 'all' } } catch { return { query: '', category: 'all' } }
 }
-export default function SearchPage({ onOpen }: { onOpen: OpenCatalog }) {
+export default function SearchPage({ onOpen, mobileSearch }: { onOpen: OpenCatalog; mobileSearch?: { query: string; submitCount: number } }) {
   const t = useTranslation()
   const [saved] = useState(savedSearch)
-  const [query, setQuery] = useState(saved.query)
+  const [desktopQuery, setQuery] = useState(saved.query)
+  const query = mobileSearch?.query ?? desktopQuery
   const [category, setCategory] = useState<SearchCategory>(saved.category)
   const [result, setResult] = useState<SearchResults | null>(null)
   const [loading, setLoading] = useState(false)
@@ -28,16 +29,20 @@ export default function SearchPage({ onOpen }: { onOpen: OpenCatalog }) {
   const [error, setError] = useState<string | null>(null)
   const [retry, setRetry] = useState(0)
   const immediate = useRef(false)
+  const previousSubmit = useRef(0)
   const generation = useRef(0)
   const input = useRef<HTMLInputElement>(null)
   const page = useRef<HTMLElement>(null)
+  const mobileResults = useRef<HTMLDivElement>(null)
   const player = usePlayback()
   const term = query.trim()
+  const submitCount = mobileSearch?.submitCount ?? 0
   useEffect(() => {
     const request = ++generation.current
     setResult(null); setError(null); setMore(false)
     try { sessionStorage.setItem('tesify.search', JSON.stringify({ query, category })) } catch { /* Storage may be disabled. */ }
-    const skipDelay = immediate.current
+    const skipDelay = immediate.current || previousSubmit.current !== submitCount
+    previousSubmit.current = submitCount
     immediate.current = false
     const cached = cachedSearch(term, category)
     if (!term || cached) {
@@ -52,7 +57,7 @@ export default function SearchPage({ onOpen }: { onOpen: OpenCatalog }) {
         .finally(() => { if (request === generation.current) setLoading(false) })
     }, skipDelay ? 0 : import.meta.env.MODE === 'android' ? 120 : 160)
     return () => { window.clearTimeout(timeout); ++generation.current }
-  }, [term, category, retry])
+  }, [term, category, retry, submitCount])
   async function loadMore() {
     if (!result || more || category === 'all') return
     const offset = result[category].nextOffset
@@ -75,17 +80,16 @@ export default function SearchPage({ onOpen }: { onOpen: OpenCatalog }) {
     if (category === value) return
     immediate.current = true
     setCategory(value)
-    if (page.current) page.current.scrollTop = 0
+    const scrollArea = mobileResults.current ?? page.current
+    if (scrollArea) scrollArea.scrollTop = 0
   }
   function submitSearch() {
     immediate.current = true
     setRetry(value => value + 1)
   }
   const count = result ? result.tracks.items.length + result.artists.items.length + result.albums.items.length + result.playlists.items.length : 0
-  return <main ref={page} className="workspace search-page" aria-label={t("Поиск")}>
-    <header className="search-header"><h1>{t("Поиск")}</h1><form className="catalog-search" role="search" onSubmit={event => { event.preventDefault(); input.current?.blur(); submitSearch() }}><Icon name="search" /><input ref={input} aria-label={t("Поиск в Spotify")} placeholder={t("Что хотите послушать?")} maxLength={180} value={query} onChange={event => setQuery(event.target.value)} />{query && <button type="button" aria-label={t("Очистить поиск")} onClick={() => { setQuery(''); input.current?.focus() }}><Icon name="close" /></button>}</form></header>
-    <div className="search-filters" role="group" aria-label={t("Категории поиска")}>{categories.map(item => <button key={item.id} aria-pressed={category === item.id} onClick={() => changeCategory(item.id)}>{t(item.label)}</button>)}</div>
-    {!term ? null
+  const filters = <div className="search-filters" role="group" aria-label={t("Категории поиска")}>{categories.map(item => <button key={item.id} aria-pressed={category === item.id} onClick={() => changeCategory(item.id)}>{t(item.label)}</button>)}</div>
+  const results = !term ? null
       : loading ? <MusicLoader label={t("Ищем музыку")} />
       : error && !result ? <div className="search-message" role="alert"><h2>{t("Поиск недоступен")}</h2><p>{error && t(error)}</p><Button variant="secondary" onClick={submitSearch}>{t("Попробовать снова")}</Button></div>
       : result && count === 0 ? <div className="search-message"><h2>{t("Ничего не найдено")}</h2><p>{t("Попробуйте другое название или имя исполнителя.")}</p></div>
@@ -102,6 +106,18 @@ export default function SearchPage({ onOpen }: { onOpen: OpenCatalog }) {
           {error && <p role="alert" className="search-inline-error">{error && t(error)}</p>}
           {result[category].nextOffset !== null && <div className="catalog-more"><Button variant="secondary" onClick={() => { void loadMore() }} disabled={more}>{more ? <MusicLoader label={t("Загружаем результаты")} variant="inline" /> : t("Показать ещё")}</Button></div>}
         </section>}
-      </>}
+      </>
+  return <main ref={page} className={`workspace search-page${mobileSearch ? ' search-page--mobile' : ''}`} aria-label={t("Поиск")}>
+    {mobileSearch ? <>
+      <div ref={mobileResults} className="search-mobile-results">
+        <header className="search-header"><h1>{t("Поиск")}</h1></header>
+        {results}
+      </div>
+      {filters}
+    </> : <>
+      <header className="search-header"><h1>{t("Поиск")}</h1><form className="catalog-search" role="search" onSubmit={event => { event.preventDefault(); input.current?.blur(); submitSearch() }}><Icon name="search" /><input ref={input} aria-label={t("Поиск в Spotify")} placeholder={t("Что хотите послушать?")} maxLength={180} value={query} onChange={event => setQuery(event.target.value)} />{query && <button type="button" aria-label={t("Очистить поиск")} onClick={() => { setQuery(''); input.current?.focus() }}><Icon name="close" /></button>}</form></header>
+      {filters}
+      {results}
+    </>}
   </main>
 }

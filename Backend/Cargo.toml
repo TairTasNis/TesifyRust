@@ -1,6 +1,6 @@
 [package]
 name = "tesify"
-version = "26.11.0-dev.10"
+version = "26.11.0-dev.11"
 description = "Tesify music and playlists"
 edition = "2024"
 rust-version = "1.95"

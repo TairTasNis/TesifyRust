@@ -54,8 +54,8 @@ export function useRouteTransition(route: Route) {
     void animation.finished.then(() => { if (motion.current === animation) finish() }, () => {})
   }
 
-  function open() {
-    entering.current = canAnimate() && typeof surface.current?.animate === 'function'
+  function open(animated = true) {
+    entering.current = animated && canAnimate() && typeof surface.current?.animate === 'function'
     setPreview(entering.current ? route : null)
   }
 
