@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     fs::{self, File, OpenOptions},
-    io::Write,
+    io::{BufReader, BufWriter, Write},
     path::PathBuf,
 };
 use uuid::Uuid;
@@ -79,9 +79,9 @@ impl LibraryStore {
                 collections: Vec::new(),
             });
         }
-        let data: LibraryData = serde_json::from_reader(
+        let data: LibraryData = serde_json::from_reader(BufReader::new(
             File::open(path).map_err(|_| "Не удалось прочитать библиотеку.".to_string())?,
-        )
+        ))
         .map_err(|_| {
             "Файл библиотеки повреждён. Исходный файл сохранён без изменений.".to_string()
         })?;
@@ -96,11 +96,11 @@ impl LibraryStore {
             .directory
             .join(format!("library-{}.tmp", Uuid::new_v4()));
         let result = (|| {
-            let mut file = File::create(&temporary)?;
-            serde_json::to_writer(&mut file, data)?;
-            file.flush()?;
-            file.sync_all()?;
-            drop(file);
+            let mut writer = BufWriter::new(File::create(&temporary)?);
+            serde_json::to_writer(&mut writer, data)?;
+            writer.flush()?;
+            writer.get_ref().sync_all()?;
+            drop(writer);
             fs::rename(&temporary, self.directory.join("library.json"))
         })();
         if result.is_err() {

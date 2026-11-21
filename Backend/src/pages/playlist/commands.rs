@@ -94,12 +94,22 @@ pub async fn import_spotify_playlist(
 
 pub async fn sync_linked_playlists(services: &AppServices) -> Result<bool, String> {
     let mut changed = false;
-    for (id, destinations) in services.library.spotify_sync_sources()? {
+    let library = services.library.clone();
+    let sources = tauri::async_runtime::spawn_blocking(move || library.spotify_sync_sources())
+        .await
+        .map_err(|_| "Не удалось прочитать библиотеку.")??;
+    for (id, destinations) in sources {
         let url = format!("https://open.spotify.com/playlist/{id}");
         if let Ok(source) = super::spotify::extract_spotify_playlist(&services.http, &url).await {
-            match services.library.sync_spotify_source(&source, &destinations) {
-                Ok(updated) => changed |= updated,
-                Err(error) => eprintln!("Spotify playlist sync: {error}"),
+            let library = services.library.clone();
+            match tauri::async_runtime::spawn_blocking(move || {
+                library.sync_spotify_source(&source, &destinations)
+            })
+            .await
+            {
+                Ok(Ok(updated)) => changed |= updated,
+                Ok(Err(error)) => eprintln!("Spotify playlist sync: {error}"),
+                Err(error) => eprintln!("Spotify playlist sync task: {error}"),
             }
         }
     }
