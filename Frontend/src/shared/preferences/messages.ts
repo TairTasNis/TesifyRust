@@ -1,4 +1,11 @@
 const messages: Record<string, [string, string]> = {
+  "Выбрать треки": ["Select", "Тректерді таңдау"],
+  "Выйти из режима выбора": ["Exit selection", "Таңдау режимінен шығу"],
+  "Импортировать трек": ["Import a track", "Тректі импорттау"],
+  "Трек Spotify по ссылке": ["Spotify track by link", "Сілтеме арқылы Spotify трегі"],
+  "Ссылка на трек": ["Track link", "Трек сілтемесі"],
+  "Вставьте полную ссылку вида https://open.spotify.com/track/…": ["Paste a full link such as https://open.spotify.com/track/…", "https://open.spotify.com/track/… түріндегі толық сілтемені қойыңыз"],
+  "Трек Spotify недоступен. Проверьте ссылку и повторите попытку.": ["The Spotify track is unavailable. Check the link and try again.", "Spotify трегі қолжетімсіз. Сілтемені тексеріп, қайталап көріңіз."],
   "Фон на странице текста песни": ["Lyrics page background", "Ән мәтіні бетінің фоны"],
   "Подсветка текста": ["Lyrics highlighting", "Ән мәтінін бөлектеу"],
   "Синхронизировать со Spotify при запуске": ["Sync with Spotify on startup", "Іске қосқанда Spotify-мен синхрондау"],

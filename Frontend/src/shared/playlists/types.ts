@@ -26,6 +26,7 @@ export type Playlist = {
 
 export type PlaylistSummary = Pick<Playlist, 'id' | 'name' | 'description' | 'coverUrl' | 'updatedAt'> & { trackCount: number }
 export type PlaylistDraft = Pick<Playlist, 'name' | 'description' | 'coverUrl'>
+export type SpotifyImportKind = 'playlist' | 'track'
 export type ImportResult = { playlist: Playlist; addedCount: number; duplicateCount: number; unavailableCount: number; sourceName: string }
 
 export type SavedCollection = {

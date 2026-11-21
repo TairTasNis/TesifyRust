@@ -4,11 +4,12 @@
 // Guest token, persisted query, pagination and field mapping are preserved.
 
 use crate::shared::playlists::models::{SpotifyImport, Track};
-use crate::shared::spotify::mapping;
+use crate::shared::spotify::{mapping, models::ArtistRef};
 use chrono::{DateTime, Utc};
 use regex::Regex;
 use reqwest::{Client, Url};
 use serde_json::{Value, json};
+use std::sync::LazyLock;
 use uuid::Uuid;
 
 const SPOTIFY_PLAYLIST_HASH: &str =
@@ -45,6 +46,110 @@ pub fn playlist_id(input: &str) -> Result<String, String> {
         return Err("Некорректный идентификатор плейлиста Spotify.".into());
     }
     Ok(id.into())
+}
+
+pub async fn extract_spotify_track(http: &Client, input: &str) -> Result<SpotifyImport, String> {
+    let invalid = "Вставьте полную ссылку вида https://open.spotify.com/track/…";
+    let url = Url::parse(input.trim()).map_err(|_| invalid.to_owned())?;
+    if url.scheme() != "https"
+        || url.host_str() != Some("open.spotify.com")
+        || url.port().is_some()
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return Err(invalid.into());
+    }
+    let mut parts = url
+        .path()
+        .trim_end_matches('/')
+        .split('/')
+        .skip(1)
+        .peekable();
+    if parts.peek().is_some_and(|part| part.starts_with("intl-")) {
+        parts.next();
+    }
+    let id = match (parts.next(), parts.next(), parts.next()) {
+        (Some("track"), Some(id), None) if mapping::valid_id(id) => id,
+        _ => return Err(invalid.into()),
+    };
+    let unavailable = "Трек Spotify недоступен. Проверьте ссылку и повторите попытку.";
+    let html = http
+        .get(format!("https://open.spotify.com/embed/track/{id}"))
+        .send()
+        .await
+        .map_err(|_| "Не удалось подключиться к Spotify.")?
+        .error_for_status()
+        .map_err(|_| unavailable)?
+        .text()
+        .await
+        .map_err(|_| unavailable)?;
+    static EMBED_DATA: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r#"(?s)<script id="__NEXT_DATA__"[^>]*>(.*?)</script>"#).unwrap()
+    });
+    let json = EMBED_DATA
+        .captures(&html)
+        .and_then(|captures| captures.get(1))
+        .ok_or(unavailable)?;
+    let data: Value = serde_json::from_str(json.as_str()).map_err(|_| unavailable)?;
+    let track = embedded_track(
+        data.pointer("/props/pageProps/state/data/entity")
+            .ok_or(unavailable)?,
+        id,
+    )
+    .ok_or(unavailable)?;
+    Ok(SpotifyImport {
+        id: String::new(),
+        name: track.title.clone(),
+        cover_url: track.cover_url.clone(),
+        track_ids: Vec::new(),
+        tracks: vec![track],
+        unavailable_count: 0,
+    })
+}
+
+fn embedded_track(data: &Value, id: &str) -> Option<Track> {
+    if data.get("uri")?.as_str()? != format!("spotify:track:{id}")
+        || data.get("isPlayable").and_then(Value::as_bool) == Some(false)
+    {
+        return None;
+    }
+    let title = data.get("name")?.as_str()?.trim();
+    if title.is_empty() {
+        return None;
+    }
+    let credits = data.get("artists")?.as_array()?;
+    let names = credits
+        .iter()
+        .filter_map(|value| value.get("name")?.as_str())
+        .collect::<Vec<_>>();
+    if names.is_empty() {
+        return None;
+    }
+    let artists = credits
+        .iter()
+        .filter_map(|artist| {
+            Some(ArtistRef {
+                id: mapping::uri_id(artist.get("uri")?.as_str()?, "artist")?,
+                name: artist.get("name")?.as_str()?.to_owned(),
+                image_url: None,
+            })
+        })
+        .collect();
+    Some(Track {
+        id: Uuid::new_v4().to_string(),
+        spotify_id: id.into(),
+        title: title.into(),
+        artist: names.join(", "),
+        artists,
+        cover_url: data.pointer("/visualIdentity/image").and_then(best_image),
+        duration_ms: data
+            .get("duration")
+            .and_then(as_i64)
+            .filter(|duration| *duration > 0),
+        added_at: Utc::now().timestamp_millis(),
+        source_added_at: None,
+        source_url: format!("https://open.spotify.com/track/{id}"),
+    })
 }
 
 pub async fn extract_spotify_playlist(http: &Client, input: &str) -> Result<SpotifyImport, String> {

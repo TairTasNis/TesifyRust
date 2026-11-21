@@ -1,0 +1,5 @@
+.route-surface { position: absolute; z-index: 1; inset: 0; background: var(--canvas); }
+.route-surface[data-preview] { z-index: 0; }
+.route-surface[data-back-moving] { pointer-events: none; box-shadow: -8px 0 26px #15233d33; }
+.desktop--mobile .route-surface .workspace { transition-property: opacity; }
+@starting-style { .desktop--mobile .route-surface .workspace { transform: none; } }

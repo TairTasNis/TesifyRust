@@ -2,6 +2,7 @@ import type { ReactNode, SVGProps } from 'react'
 
 export type IconName =
   | 'dashboard'
+  | 'home'
   | 'search'
   | 'library'
   | 'minimize'
@@ -19,6 +20,7 @@ export type IconName =
 type IconProps = SVGProps<SVGSVGElement> & { name: IconName }
 
 const paths: Record<IconName, ReactNode> = {
+  home: <path d="m3.5 10.4 7.2-6.4a2 2 0 0 1 2.6 0l7.2 6.4v8.2a1.9 1.9 0 0 1-1.9 1.9h-3.9v-5a1.6 1.6 0 0 0-1.6-1.6h-2.2a1.6 1.6 0 0 0-1.6 1.6v5H5.4a1.9 1.9 0 0 1-1.9-1.9z" />,
   dashboard: (
     <>
       <rect x="3" y="3" width="7" height="7" rx="1.5" />

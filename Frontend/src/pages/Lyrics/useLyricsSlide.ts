@@ -27,8 +27,8 @@ export function useLyricsSlide(page: RefObject<HTMLElement | null>, mobile: bool
       : shown ? playerSlide.below : playerSlide.visible
     previous?.cancel()
     const slide = node.animate([
-      { transform: from }, { transform: shown ? playerSlide.visible : playerSlide.below },
-    ], playerMotionTiming(node))
+      { transform: from }, { transform: shown ? playerSlide.visible : playerSlide.right },
+    ], { ...playerMotionTiming(node), duration: shown ? 480 : 230 })
     current.current = slide
     void slide.finished.then(() => {
       if (current.current !== slide) return

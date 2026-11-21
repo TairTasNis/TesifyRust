@@ -2,13 +2,15 @@ import { useTranslation } from '../../shared/preferences/i18n'
 import { useState } from 'react'
 import type { OpenCatalog } from '../../shared/catalog/types'
 import { useLibrary } from '../../shared/playlists/Membership/LibraryProvider'
+import type { Playlist, PlaylistDraft, SpotifyImportKind } from '../../shared/playlists/types'
 import PlaylistEditor from '../../shared/playlists/PlaylistEditor/PlaylistEditor'
 import { trackCount } from '../../shared/playlists/format'
 import Button from '../../shared/ui/Button/Button'
 import Icon from '../../shared/ui/Icon/Icon'
 import MusicLoader from '../../shared/ui/MusicLoader/MusicLoader'
 import PlaylistCover from '../../shared/ui/PlaylistCover/PlaylistCover'
-import { createPlaylist } from './api'
+import ImportPlaylistModal from '../Playlist/ImportPlaylistModal'
+import { createPlaylist, createPlaylistWithSpotify } from './api'
 import './LibraryPage.css'
 
 type Props = { onOpenPlaylist: (id: string) => void; onOpenCatalog: OpenCatalog; onOpenDownloads: () => void }
@@ -17,6 +19,16 @@ export default function LibraryPage({ onOpenPlaylist, onOpenCatalog, onOpenDownl
   const t = useTranslation()
   const { index, error, refresh } = useLibrary()
   const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState<PlaylistDraft>()
+  const [importKind, setImportKind] = useState<SpotifyImportKind | null>(null)
+
+  function created(playlist: Playlist) {
+    void refresh()
+    setDraft(undefined)
+    setEditing(false)
+    setImportKind(null)
+    onOpenPlaylist(playlist.id)
+  }
 
   return (
     <main className="workspace library-page" aria-label={t("Библиотека")}>
@@ -44,7 +56,11 @@ export default function LibraryPage({ onOpenPlaylist, onOpenCatalog, onOpenDownl
         </button>)}</div>
       </section>}
 
-      {editing && <PlaylistEditor onClose={() => setEditing(false)} onSave={async (draft) => { const playlist = await createPlaylist(draft); void refresh(); setEditing(false); onOpenPlaylist(playlist.id) }} />}
+      {editing && !importKind && <PlaylistEditor draft={draft} onClose={() => { setDraft(undefined); setEditing(false) }}
+        onSave={async draft => created(await createPlaylist(draft))}
+        onImport={async (draft, kind) => { setDraft(draft); setImportKind(kind) }} />}
+      {editing && draft && importKind && <ImportPlaylistModal kind={importKind} onClose={() => setImportKind(null)}
+        onImport={async (url, autoSync) => created(await createPlaylistWithSpotify(draft, importKind, url, autoSync))} />}
     </main>
   )
 }

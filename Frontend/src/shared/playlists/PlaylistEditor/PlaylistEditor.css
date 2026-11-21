@@ -11,6 +11,7 @@
 .playlist-editor-remove { display: block; margin: 7px auto 0; padding: 3px; border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 10px; cursor: pointer; }
 .playlist-editor-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-top: 26px; }
 .playlist-editor-import { padding-right: 0; padding-left: 0; font-size: 12px; }
+.playlist-editor-imports { display: flex; flex-wrap: wrap; gap: 0 16px; }
 @media(hover: hover) and (pointer: fine) { .playlist-editor-import:hover { background: transparent; } }
 .playlist-editor-save-actions { display: flex; justify-content: flex-end; gap: 10px; margin-left: auto; }
 @media(max-width: 600px) { .playlist-editor-grid { grid-template-columns: 1fr; gap: 22px; } .playlist-editor-art { display: flex; flex-direction: column; align-items: center; } .playlist-editor-upload { width: 132px; height: 132px; } }

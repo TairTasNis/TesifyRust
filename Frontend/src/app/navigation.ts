@@ -1,4 +1,5 @@
 export type PageId = 'home' | 'search' | 'library' | 'downloads' | 'playlist' | 'about' | 'artist' | 'album' | 'spotify-playlist' | 'settings'
+export type Route = { page: PageId; playlistId?: string }
 
 export const pageTitles: Record<PageId, string> = {
   home: 'Главная',
@@ -13,7 +14,11 @@ export const pageTitles: Record<PageId, string> = {
   settings: 'Настройки',
 }
 
-export function routeFromHash(): { page: PageId; playlistId?: string } {
+export function routeKey(route: Route) {
+  return route.playlistId ? `${route.page}/${route.playlistId}` : route.page
+}
+
+export function routeFromHash(): Route {
   const [page, id] = window.location.hash.slice(1).split('/')
   if (page === 'playlist') return { page, playlistId: id ?? '' }
   if (page === 'artist' || page === 'album' || page === 'spotify-playlist') return { page, playlistId: id ?? '' }

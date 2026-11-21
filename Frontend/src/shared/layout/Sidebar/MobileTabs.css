@@ -1,0 +1,64 @@
+.mobile-tabs {
+  --tab-inset: 4px;
+  --tab-width: calc((100% - 2 * var(--tab-inset)) / 4);
+  --glass: #e2ebf4;
+  --glass-depth: #b4c7df;
+  --glass-edge: #faffffb8;
+  --glass-lens: #ffffffa3;
+  --tab-ink: #3c4d65;
+  --tab-active: #10233d;
+  position: absolute;
+  z-index: 3;
+  inset: auto max(14px, env(safe-area-inset-right)) calc(9px + env(safe-area-inset-bottom, 0px)) max(14px, env(safe-area-inset-left));
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  height: 59px;
+  max-width: 480px;
+  margin-inline: auto;
+  padding: var(--tab-inset);
+  border: 1px solid var(--glass-edge);
+  border-radius: 28px;
+  isolation: isolate;
+  background: radial-gradient(ellipse at 50% 105%, color-mix(in srgb, var(--glass-depth) 78%, transparent), transparent 77%), color-mix(in srgb, var(--glass) 76%, transparent);
+  box-shadow: inset 0 1px 1px #fff6, inset 0 -1px 0 #486e9c22, 0 4px 16px #0c1b312c;
+  backdrop-filter: blur(20px) saturate(150%);
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+:root[data-theme="dark"] .mobile-tabs {
+  --glass: #202936;
+  --glass-depth: #163557;
+  --glass-edge: #becdd63d;
+  --glass-lens: #d9eeff28;
+  --tab-ink: #c2d0e3;
+  --tab-active: #f5faff;
+  box-shadow: inset 0 1px 1px #fff2, inset 0 -1px 0 #ffffff12, 0 4px 19px #0007;
+}
+.mobile-tab-lens {
+  position: absolute;
+  inset: var(--tab-inset) auto var(--tab-inset) var(--tab-inset);
+  width: var(--tab-width);
+  border-radius: 23px;
+  background: linear-gradient(150deg, var(--glass-lens), color-mix(in srgb, var(--glass-lens) 75%, transparent));
+  box-shadow: inset 0 1px 1px #fff5, inset 0 -1px 1px #fff3, 0 1px 5px #16335420;
+  pointer-events: none;
+  transition: transform var(--motion-base) var(--ease-in-out), opacity var(--motion-fast) ease;
+}
+.mobile-tabs[data-dragging] .mobile-tab-lens { opacity: .82; }
+.mobile-tab {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 22px;
+  background: transparent;
+  color: var(--tab-ink);
+  cursor: pointer;
+  touch-action: none;
+}
+.mobile-tab > svg { width: 24px; height: 24px; stroke-width: 1.75; filter: drop-shadow(0 1px 0 #fff2); }
+.mobile-tab[aria-current] { color: var(--tab-active); }
+.mobile-tab:focus-visible { outline: 2px solid var(--control-accent); outline-offset: -4px; }
+@media (prefers-reduced-motion: reduce) { .mobile-tab-lens { transition: none; } }

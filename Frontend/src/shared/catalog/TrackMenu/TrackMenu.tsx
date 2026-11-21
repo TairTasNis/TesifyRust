@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { errorMessage } from '../../lib/backend'
 import { useLibrary } from '../../playlists/Membership/LibraryProvider'
+import { trackCount } from '../../playlists/format'
 import { useTranslation } from '../../preferences/i18n'
 import Icon from '../../ui/Icon/Icon'
 import Modal from '../../ui/Modal/Modal'
@@ -41,11 +42,13 @@ export default function TrackMenu({ state, onOpen, playlistId }: {
     }
   }, [menu])
 
-  const selected = [...new Map(targets?.filter(track => track.spotifyId && track.canSave !== false).map(track => [track.spotifyId, track])).values()]
-  const saved = selected.length > 0 && selected.every(track => index?.memberships[track.spotifyId]?.length)
-  const remove = playlistId || saved
+  const available = (tracks: typeof state.selected) => [...new Map(tracks.filter(track => track.spotifyId && track.canSave !== false).map(track => [track.spotifyId, track])).values()]
+  const menuTracks = available(targets ?? [])
+  const selectedTracks = available(state.selected)
+  const actionLabel = (tracks: typeof selectedTracks) => playlistId || (tracks.length && tracks.every(track => index?.memberships[track.spotifyId]?.length))
+    ? 'Удалить из плейлиста' : 'Добавить в плейлист'
 
-  function changePlaylists() {
+  function changePlaylists(selected: typeof selectedTracks) {
     state.close()
     if (!playlistId) {
       choosePlaylists(selected.map(track => ({ spotifyId: track.spotifyId, title: track.title })))
@@ -65,12 +68,21 @@ export default function TrackMenu({ state, onOpen, playlistId }: {
   }
 
   const actions = <>
+    <button type="button" onClick={state.start}><Icon name="check" />{t('Выбрать треки')}</button>
     <button type="button" onClick={() => { state.toggleAll(); state.close() }}><Icon name="check" />{t(state.all ? 'Снять выделение' : 'Выделить всё')}</button>
-    <button type="button" disabled={!selected.length} onClick={changePlaylists}><Icon name={remove ? 'trash' : 'plus'} />{t(remove ? 'Удалить из плейлиста' : 'Добавить в плейлист')}</button>
+    <button type="button" disabled={!menuTracks.length} onClick={() => changePlaylists(menuTracks)}><Icon name={actionLabel(menuTracks) === 'Добавить в плейлист' ? 'plus' : 'trash'} />{t(actionLabel(menuTracks))}</button>
     <button type="button" disabled={!menu?.track.artists?.length && !menu?.track.artist.trim()} onClick={showArtist}><Icon name="artist" />{t('Об исполнителе')}</button>
   </>
 
   return <>
+    {state.selecting && <div className="track-selection" role="group" aria-label={t('Выбрать треки')}>
+      <button type="button" className="track-selection-close" aria-label={t('Выйти из режима выбора')} onClick={state.clear}><Icon name="close" /></button>
+      <span className="track-selection-count" aria-live="polite">{trackCount(state.selected.length)}</span>
+      <button type="button" onClick={state.toggleAll}>{t(state.all ? 'Снять выделение' : 'Выделить всё')}</button>
+      <button type="button" disabled={!selectedTracks.length} aria-label={t(actionLabel(selectedTracks))} onClick={() => changePlaylists(selectedTracks)}>
+        <Icon name={actionLabel(selectedTracks) === 'Добавить в плейлист' ? 'plus' : 'trash'} />{t(playlistId ? 'Удалить' : actionLabel(selectedTracks))}
+      </button>
+    </div>}
     {menu && (menu.touch ? <Modal title={menu.track.title} onClose={state.close}><div className="track-menu-actions">{actions}</div></Modal>
       : createPortal(<div className="track-menu-actions track-menu-popover" ref={panel} role="group" aria-label={menu.track.title}
         onKeyDown={event => {

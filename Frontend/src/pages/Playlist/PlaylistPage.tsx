@@ -16,7 +16,7 @@ import Modal from '../../shared/ui/Modal/Modal'
 import MusicLoader from '../../shared/ui/MusicLoader/MusicLoader'
 import PlaylistCover from '../../shared/ui/PlaylistCover/PlaylistCover'
 import PlaybackIndicator from '../../shared/ui/PlaybackIndicator/PlaybackIndicator'
-import { deletePlaylist, getPlaylist, updatePlaylist } from './api'
+import { deletePlaylist, getPlaylist, importSpotify, updatePlaylist } from './api'
 import ImportPlaylistModal from './ImportPlaylistModal'
 import TrackSortHeader from './TrackSortHeader'
 import { nextTrackSort, sortPlaylistTracks } from './sorting'
@@ -82,6 +82,7 @@ export default function PlaylistPage({ playlistId, onBack, onOpen }: Props) {
           </div>
         </header>
         {tracks.length > 0 && <section className="playlist-tracks" aria-label={t("Треки плейлиста")}>
+          <TrackMenu state={menu} onOpen={onOpen} playlistId={playlistId} />
           <div className="track-table-scroll"><table className="track-table"><thead><tr>
             <TrackSortHeader column="index" label={t("Номер")} className="track-number" sort={sort} onSort={changeSort}>#</TrackSortHeader>
             <TrackSortHeader column="title" label={t("Название")} sort={sort} onSort={changeSort} />
@@ -110,9 +111,9 @@ export default function PlaylistPage({ playlistId, onBack, onOpen }: Props) {
             </tr>
           })}</tbody></table></div>
         </section>}
-        <TrackMenu state={menu} onOpen={onOpen} playlistId={playlistId} />
         {editing && <PlaylistEditor initial={playlist} onClose={() => setEditing(false)} onSave={async (draft) => { setPlaylist(await updatePlaylist(playlist.id, draft)); setEditing(false); void refresh() }} onImport={async (draft) => { setPlaylist(await updatePlaylist(playlist.id, draft)); setEditing(false); setImporting(true); void refresh() }} />}
-        {importing && <ImportPlaylistModal playlistId={playlist.id} syncedSources={playlist.spotifySync?.sources} onClose={() => { setImporting(false); setEditing(true) }} onImported={imported} />}
+        {importing && <ImportPlaylistModal syncedSources={playlist.spotifySync?.sources} onClose={() => { setImporting(false); setEditing(true) }}
+          onImport={async (url, autoSync) => imported(await importSpotify(playlist.id, url, autoSync))} />}
         {deleting && <Modal title={t("Удалить плейлист?")} onClose={() => setDeleting(false)} busy={deleteBusy}>{(close) => <><p className="playlist-delete-note">{t("Плейлист «{0}» и его треки будут удалены из библиотеки.", playlist.name)}</p>{deleteError && <p className="form-error" role="alert">{t(deleteError)}</p>}<div className="modal-actions"><Button variant="secondary" onClick={close} disabled={deleteBusy}>{t("Отмена")}</Button><Button variant="danger" disabled={deleteBusy} aria-busy={deleteBusy} onClick={async () => { setDeleteBusy(true); try { await deletePlaylist(playlist.id); void refresh(); onBack() } catch (error) { setDeleteError(errorMessage(error)) } finally { setDeleteBusy(false) } }}>{deleteBusy && <MusicLoader variant="compact" label={t("Удаляем плейлист")} />}{deleteBusy ? t("Удаляем…") : t("Удалить")}</Button></div></>}</Modal>}
       </>}
     </main>

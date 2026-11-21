@@ -1,7 +1,7 @@
 {
   "$schema": "../Frontend/node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Tesify",
-  "version": "26.11.0-dev.9",
+  "version": "26.11.0-dev.10",
   "identifier": "app.tesify.desktop",
   "build": {
     "frontendDist": "../Frontend/dist",

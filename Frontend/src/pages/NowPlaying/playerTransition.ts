@@ -4,6 +4,7 @@ import { canAnimate } from '../../shared/lib/motion'
 import { playerMotionTiming, playerSlide } from '../../shared/playback/playerMotion'
 
 type PartKind = 'artwork' | 'text' | 'button'
+type PlayerMovement = { done: Promise<unknown>; reverse: () => boolean; finish: () => void }
 const sharedParts = [
   { mini: '.mobile-mini-player-cover', full: '.now-playing-cover', kind: 'artwork' },
   { mini: '.mobile-mini-player-identity > strong', full: '.now-playing-identity > h1', kind: 'text' },
@@ -13,7 +14,7 @@ const sharedParts = [
 
 export function usePlayerTransition(page: RefObject<HTMLElement | null>, shown: boolean, covered: boolean, trackId?: string) {
   const previous = useRef({ shown, covered, trackId })
-  const motion = useRef<ReturnType<typeof movePlayer>>(null)
+  const motion = useRef<PlayerMovement | null>(null)
 
   useLayoutEffect(() => {
     function stop() {
@@ -39,6 +40,12 @@ export function usePlayerTransition(page: RefObject<HTMLElement | null>, shown: 
       return
     }
     if (from.shown === shown) return
+    const node = page.current
+    const fromTransform = getComputedStyle(node).transform
+    if (!shown && motion.current) {
+      motion.current.finish()
+      motion.current = null
+    }
     if (motion.current) {
       if (!motion.current.reverse()) {
         motion.current.finish()
@@ -47,7 +54,7 @@ export function usePlayerTransition(page: RefObject<HTMLElement | null>, shown: 
       return
     }
 
-    const movement = movePlayer(page.current, shown)
+    const movement = shown ? movePlayer(node) : exitPlayer(node, fromTransform)
     if (!movement) return
     motion.current = movement
     void movement.done.then(() => {
@@ -59,7 +66,20 @@ export function usePlayerTransition(page: RefObject<HTMLElement | null>, shown: 
   }, [page, shown, covered, trackId])
 }
 
-function movePlayer(page: HTMLElement, opening: boolean) {
+function exitPlayer(page: HTMLElement, from: string) {
+  if (typeof page.animate !== 'function') return null
+  page.dataset.transitioning = ''
+  const animation = page.animate([{ transform: from, opacity: 1 }, { transform: playerSlide.right, opacity: 1 }], {
+    ...playerMotionTiming(page), duration: 230,
+  })
+  return {
+    done: animation.finished,
+    reverse() { animation.reverse(); return true },
+    finish() { delete page.dataset.transitioning; animation.cancel() },
+  }
+}
+
+function movePlayer(page: HTMLElement) {
   const miniPlayer = document.querySelector('#mobile-mini-player:not([data-lyrics])')
   if (!miniPlayer || typeof page.animate !== 'function') return null
 
@@ -82,9 +102,7 @@ function movePlayer(page: HTMLElement, opening: boolean) {
   overlay.append(...copies.map(({ copy }) => copy))
   const animations: Animation[] = []
   function animate(node: HTMLElement, frames: Keyframe[], curve = 'linear') {
-    animations.push(node.animate(opening ? frames : frames.slice().reverse().map(frame => ({
-      ...frame, offset: typeof frame.offset === 'number' ? 1 - frame.offset : undefined,
-    })), { ...timing, easing: curve }))
+    animations.push(node.animate(frames, { ...timing, easing: curve }))
   }
 
   document.body.append(overlay)

@@ -22,6 +22,7 @@ pub fn router(services: AppServices) -> Router {
     Router::new()
         .route("/health", get(|| async { Json(json!({"ready":true})) }))
         .route("/playlists", get(list).post(create))
+        .route("/playlists/import/spotify", post(create_with_import))
         .route("/library", get(library_index))
         .route("/library/memberships", post(track_memberships))
         .route("/library/memberships/bulk", post(bulk_track_memberships))
@@ -83,6 +84,9 @@ async fn create(
     Json(draft): Json<PlaylistDraft>,
 ) -> ApiResult<Playlist> {
     services.library.create(draft).map(Json).map_err(error)
+}
+async fn create_with_import(State(services): State<AppServices>, Json(input): Json<crate::pages::playlist::commands::CreateSpotifyImport>) -> ApiResult<Playlist> {
+    crate::pages::playlist::commands::create_with_spotify(&services, input).await.map(Json).map_err(error)
 }
 async fn detail(
     State(services): State<AppServices>,

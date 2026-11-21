@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.view.View
 import android.webkit.WebView
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.BackEventCompat
 import androidx.activity.enableEdgeToEdge
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -28,6 +29,19 @@ class MainActivity : TauriActivity() {
   }
 
   private val overlayBack = object : OnBackPressedCallback(true) {
+      override fun handleOnBackStarted(backEvent: BackEventCompat) {
+        contentWebView?.evaluateJavascript("window.dispatchEvent(new Event('tesify:back-start'))", null)
+      }
+
+      override fun handleOnBackProgressed(backEvent: BackEventCompat) {
+        val progress = backEvent.progress.coerceIn(0f, 1f)
+        contentWebView?.evaluateJavascript("window.dispatchEvent(new CustomEvent('tesify:back-progress',{detail:$progress}))", null)
+      }
+
+      override fun handleOnBackCancelled() {
+        contentWebView?.evaluateJavascript("window.dispatchEvent(new Event('tesify:back-cancel'))", null)
+      }
+
       override fun handleOnBackPressed() {
         val webView = contentWebView
         if (webView == null) {

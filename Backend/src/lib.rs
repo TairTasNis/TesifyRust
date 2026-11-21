@@ -38,6 +38,7 @@ pub fn run() {
             pages::playlist::commands::get_playlist,
             pages::playlist::commands::update_playlist,
             pages::playlist::commands::import_spotify_playlist,
+            pages::playlist::commands::create_playlist_with_spotify,
             pages::playlist::commands::sync_spotify_playlists,
             pages::search::commands::search_spotify,
             pages::artist::commands::get_spotify_artist,

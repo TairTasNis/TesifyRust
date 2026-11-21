@@ -12,6 +12,7 @@ type Press = { id: number; x: number; y: number; timer: number }
 export function useTrackMenu(tracks: MenuTrack[]) {
   const [menu, setMenu] = useState<Menu | null>(null)
   const [selection, setSelection] = useState<Set<string>>(() => new Set())
+  const [selecting, setSelecting] = useState(false)
   const press = useRef<Press | null>(null)
   const held = useRef(false)
   const releaseGuard = useRef<(() => void) | null>(null)
@@ -47,14 +48,28 @@ export function useTrackMenu(tracks: MenuTrack[]) {
     setMenu({ track, x, y, touch: true })
   }
 
+  function clearSelection() {
+    setSelection(new Set())
+    setSelecting(false)
+  }
+
   useEffect(() => {
-    if (!selection.size) return
+    if (!selecting) return
     function clear(event: KeyboardEvent) {
-      if (event.key === 'Escape' && !menu && !document.querySelector('dialog[open]')) setSelection(new Set())
+      if (event.key === 'Escape' && !event.defaultPrevented && !menu && !document.querySelector('dialog[open]')) clearSelection()
+    }
+    function back(event: Event) {
+      if (menu || document.querySelector('dialog[open]')) return
+      event.preventDefault()
+      clearSelection()
     }
     window.addEventListener('keydown', clear)
-    return () => window.removeEventListener('keydown', clear)
-  }, [menu, selection.size])
+    window.addEventListener('tesify:back', back, true)
+    return () => {
+      window.removeEventListener('keydown', clear)
+      window.removeEventListener('tesify:back', back, true)
+    }
+  }, [menu, selecting])
 
   function row(track: MenuTrack) {
     return {
@@ -91,22 +106,30 @@ export function useTrackMenu(tracks: MenuTrack[]) {
           event.stopPropagation()
           return
         }
-        if (!selected.length && !event.ctrlKey && !event.metaKey) return
-        if (event.target instanceof Element && event.target.closest('.catalog-artist-links, .catalog-track-save, .catalog-inline-link')) return
+        if (!selecting && !event.ctrlKey && !event.metaKey) return
         event.preventDefault()
         event.stopPropagation()
         const next = new Set(selected.map(item => item.id))
         if (!next.delete(track.id)) next.add(track.id)
         setSelection(next)
+        setSelecting(true)
       },
     }
   }
 
   return {
-    row, menu, all,
+    row, menu, all, selected, selecting: selecting && tracks.length > 0,
     targets: menu && (selection.has(menu.track.id) ? selected : [menu.track]),
     close: () => setMenu(null),
-    clear: () => setSelection(new Set()),
-    toggleAll: () => setSelection(new Set(all ? [] : tracks.map(track => track.id))),
+    clear: clearSelection,
+    start: () => {
+      if (menu) setSelection(new Set([menu.track.id]))
+      setSelecting(true)
+      setMenu(null)
+    },
+    toggleAll: () => {
+      setSelection(new Set(all ? [] : tracks.map(track => track.id)))
+      setSelecting(true)
+    },
   }
 }

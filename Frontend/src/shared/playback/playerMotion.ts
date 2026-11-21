@@ -1,5 +1,6 @@
 export const playerSlide = {
   below: 'translate3d(0, 100%, 0)',
+  right: 'translate3d(100%, 0, 0)',
   visible: 'translate3d(0, 0, 0)',
 }
 

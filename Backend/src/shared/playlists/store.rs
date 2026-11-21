@@ -219,11 +219,19 @@ impl LibraryStore {
     }
 
     pub fn create(&self, draft: PlaylistDraft) -> Result<Playlist, String> {
+        self.create_with_import(draft, None)
+    }
+
+    pub fn create_with_import(
+        &self,
+        draft: PlaylistDraft,
+        source: Option<(SpotifyImport, bool)>,
+    ) -> Result<Playlist, String> {
         let draft = validate_draft(draft)?;
         let _lock = self.lock()?;
         let mut data = self.read()?;
         let now = Utc::now().timestamp_millis();
-        let playlist = Playlist {
+        let mut playlist = Playlist {
             id: Uuid::new_v4().to_string(),
             name: draft.name,
             description: draft.description,
@@ -233,6 +241,9 @@ impl LibraryStore {
             tracks: Vec::new(),
             spotify_sync: Default::default(),
         };
+        if let Some((source, auto_sync)) = source {
+            apply_import(&mut playlist, source, auto_sync);
+        }
         data.playlists.push(playlist.clone());
         self.save(&data)?;
         Ok(playlist)
@@ -280,36 +291,9 @@ impl LibraryStore {
             .iter_mut()
             .find(|playlist| playlist.id == id)
             .ok_or("Плейлист не найден.")?;
-        let added_count = append_tracks(playlist, &source.tracks, auto_sync);
-        if auto_sync {
-            let previous = playlist
-                .spotify_sync
-                .sources
-                .insert(source.id, source.track_ids);
-            if let Some(previous) = previous {
-                remove_detached_tracks(playlist, &previous);
-            }
-        } else {
-            playlist.spotify_sync.sources.remove(&source.id);
-            let linked = linked_track_ids(playlist);
-            playlist
-                .spotify_sync
-                .managed_tracks
-                .retain(|id| linked.contains(id));
-        }
-        if playlist.cover_url.is_none() {
-            playlist.cover_url = source.cover_url;
-        }
-        playlist.updated_at = Utc::now().timestamp_millis();
-        let playlist = playlist.clone();
+        let result = apply_import(playlist, source, auto_sync);
         self.save(&data)?;
-        Ok(ImportResult {
-            playlist,
-            added_count,
-            duplicate_count: source.tracks.len() - added_count,
-            unavailable_count: source.unavailable_count,
-            source_name: source.name,
-        })
+        Ok(result)
     }
 
     pub fn spotify_sync_sources(
@@ -363,6 +347,36 @@ impl LibraryStore {
             self.save(&data)?;
         }
         Ok(changed)
+    }
+}
+
+fn apply_import(playlist: &mut Playlist, source: SpotifyImport, auto_sync: bool) -> ImportResult {
+    let added_count = append_tracks(playlist, &source.tracks, auto_sync);
+    if auto_sync {
+        if let Some(previous) = playlist
+            .spotify_sync
+            .sources
+            .insert(source.id, source.track_ids)
+        {
+            remove_detached_tracks(playlist, &previous);
+        }
+    } else if playlist.spotify_sync.sources.remove(&source.id).is_some() {
+        let linked = linked_track_ids(playlist);
+        playlist
+            .spotify_sync
+            .managed_tracks
+            .retain(|id| linked.contains(id));
+    }
+    if playlist.cover_url.is_none() {
+        playlist.cover_url = source.cover_url;
+    }
+    playlist.updated_at = Utc::now().timestamp_millis();
+    ImportResult {
+        playlist: playlist.clone(),
+        added_count,
+        duplicate_count: source.tracks.len() - added_count,
+        unavailable_count: source.unavailable_count,
+        source_name: source.name,
     }
 }
 

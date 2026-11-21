@@ -7,17 +7,17 @@ import Button from '../../ui/Button/Button'
 import Icon from '../../ui/Icon/Icon'
 import Modal from '../../ui/Modal/Modal'
 import MusicLoader from '../../ui/MusicLoader/MusicLoader'
-import type { PlaylistDraft } from '../types'
+import type { PlaylistDraft, SpotifyImportKind } from '../types'
 import { uploadCover } from '../covers'
 import './PlaylistEditor.css'
 
-type Props = { initial?: PlaylistDraft; onClose: () => void; onSave: (draft: PlaylistDraft) => Promise<void>; onImport?: (draft: PlaylistDraft) => Promise<void> }
+type Props = { initial?: PlaylistDraft; draft?: PlaylistDraft; onClose: () => void; onSave: (draft: PlaylistDraft) => Promise<void>; onImport?: (draft: PlaylistDraft, kind: SpotifyImportKind) => Promise<void> }
 
-export default function PlaylistEditor({ initial, onClose, onSave, onImport }: Props) {
+export default function PlaylistEditor({ initial, draft = initial, onClose, onSave, onImport }: Props) {
   const t = useTranslation()
-  const [name, setName] = useState(initial?.name ?? '')
-  const [description, setDescription] = useState(initial?.description ?? '')
-  const [coverUrl, setCoverUrl] = useState(initial?.coverUrl ?? null)
+  const [name, setName] = useState(draft?.name ?? '')
+  const [description, setDescription] = useState(draft?.description ?? '')
+  const [coverUrl, setCoverUrl] = useState(draft?.coverUrl ?? null)
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -78,13 +78,16 @@ export default function PlaylistEditor({ initial, onClose, onSave, onImport }: P
             {image && <button className="playlist-editor-remove" type="button" disabled={busy} onClick={() => { setFile(null); setCoverUrl(null); uploaded.current = null }}>{t("Убрать обложку")}</button>}
           </div>
           <div>
-            <div className="form-field"><label htmlFor="playlist-name">{t("Название")}</label><input id="playlist-name" autoFocus data-autofocus maxLength={500} value={name} onChange={(event) => setName(event.target.value)} disabled={busy} /></div>
+            <div className="form-field"><label htmlFor="playlist-name">{t("Название")}</label><input id="playlist-name" maxLength={500} value={name} onChange={(event) => setName(event.target.value)} disabled={busy} /></div>
             <div className="form-field"><label htmlFor="playlist-description">{t("Описание")} <span>{t("необязательно")}</span></label><textarea id="playlist-description" maxLength={5000} value={description} onChange={(event) => setDescription(event.target.value)} disabled={busy} /></div>
           </div>
         </div>
         {error && <p className="form-error" role="alert">{error && t(error)}</p>}
         <div className="playlist-editor-footer">
-          {onImport && <Button className="playlist-editor-import" variant="ghost" disabled={busy} onClick={() => { void save(onImport) }}><Icon name="import" />{t("Импортировать плейлист")}</Button>}
+          {onImport && <div className="playlist-editor-imports">
+            <Button className="playlist-editor-import" variant="ghost" disabled={busy} onClick={() => { void save(draft => onImport(draft, 'playlist')) }}><Icon name="import" />{t('Импортировать плейлист')}</Button>
+            {!initial && <Button className="playlist-editor-import" variant="ghost" disabled={busy} onClick={() => { void save(draft => onImport(draft, 'track')) }}><Icon name="import" />{t('Импортировать трек')}</Button>}
+          </div>}
           <div className="playlist-editor-save-actions"><Button variant="secondary" onClick={close} disabled={busy}>{t("Отмена")}</Button><Button type="submit" disabled={busy} aria-busy={busy}>{busy && <MusicLoader variant="compact" label={phase || t("Сохраняем")} />}{busy ? phase : initial ? t("Сохранить") : t("Создать плейлист")}</Button></div>
         </div>
       </form>}

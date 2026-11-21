@@ -3,6 +3,7 @@ import Icon from '../../ui/Icon/Icon'
 import type { IconName } from '../../ui/Icon/Icon'
 import Logo from '../../ui/Logo/Logo'
 import type { PageId } from '../../../app/navigation'
+import MobileTabs from './MobileTabs'
 import './Sidebar.css'
 
 const navigation: { id: PageId; label: string; icon: IconName }[] = [
@@ -10,6 +11,7 @@ const navigation: { id: PageId; label: string; icon: IconName }[] = [
   { id: 'search', label: 'Поиск', icon: 'search' },
   { id: 'library', label: 'Библиотека', icon: 'library' },
 ]
+const mobileTabs: typeof navigation = [{ id: 'home', label: 'Главная', icon: 'home' }, ...navigation.slice(1), { id: 'settings', label: 'Настройки', icon: 'settings' }]
 
 type SidebarProps = {
   activePage: PageId
@@ -20,8 +22,9 @@ type SidebarProps = {
 export default function Sidebar({ activePage, mobile, onNavigate }: SidebarProps) {
   const t = useTranslation()
   const selectedIndex = navigation.findIndex(({ id }) => id === activePage)
+  if (mobile) return <MobileTabs tabs={mobileTabs} activePage={activePage} onNavigate={onNavigate} />
   return (
-    <aside className="sidebar" aria-label={mobile ? undefined : t("Боковая панель")}>
+    <aside className="sidebar" aria-label={t("Боковая панель")}>
       <button
         className="brand-button"
         aria-label={t("О программе Tesify")}
@@ -42,12 +45,12 @@ export default function Sidebar({ activePage, mobile, onNavigate }: SidebarProps
             aria-current={activePage === id ? 'page' : undefined}
             onClick={() => onNavigate(id)}
           >
-            {mobile ? <><span className="navigation-icon"><Icon name={icon} /></span><span className="navigation-label">{t(label)}</span></> : <Icon name={icon} />}
+            <Icon name={icon} />
           </button>
         ))}
       </nav>
       <button type="button" className="navigation-button settings-button" aria-label={t("Настройки")} title={t("Настройки")} aria-current={activePage === 'settings' ? 'page' : undefined} onClick={() => onNavigate('settings')}>
-        {mobile ? <><span className="navigation-icon"><Icon name="settings" /></span><span className="navigation-label">{t("Настройки")}</span></> : <Icon name="settings" />}
+        <Icon name="settings" />
       </button>
     </aside>
   )
