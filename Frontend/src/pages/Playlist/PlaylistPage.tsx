@@ -97,7 +97,6 @@ export default function PlaylistPage({ playlistId, onBack, onOpen }: Props) {
                   <button type="button" className="track-start" aria-label={`${active && player.playing ? t("Пауза") : t("Воспроизвести")}: ${track.title}`} aria-current={active ? 'true' : undefined}
                     onClick={event => { event.stopPropagation(); player.playQueue(playlistId, tracks, index) }}>{track.title}</button>
                   <TrackArtistLinks track={track} onOpen={onOpen} />
-                  <span className="track-mobile-date">{added}</span>
                 </div>
               </div></td>
               <td className="track-date-column">{added}</td>

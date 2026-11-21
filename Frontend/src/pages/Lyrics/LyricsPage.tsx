@@ -56,7 +56,7 @@ export default function LyricsPage({ onClose, mobile, shown, onExited, children,
   const [sourcesFor, setSourcesFor] = useState<string | null>(null)
   const [toolDialog, setToolDialog] = useState<'appearance' | 'track' | null>(null)
   const showTrackPicker = shown && toolDialog === 'track'
-  const showSources = shown && sourcesFor === key
+  const showSources = shown && appearance.showCover && sourcesFor === key
   const [offset, setOffset] = useState<number>(() => {
     if (!track?.id) return 0
     const val = localStorage.getItem(`tesify_lyrics_offset_${track.id}`)
@@ -144,7 +144,6 @@ export default function LyricsPage({ onClose, mobile, shown, onExited, children,
     data-closing={closing || !shown || undefined} inert={!shown} style={style as CSSProperties}>
     <LyricsBackground coverUrl={track.coverUrl} playing={player.playing && !player.loading} mobile={mobile} />
     <header className="lyrics-header" data-tauri-drag-region>
-      <span data-tauri-drag-region><Icon name="lyrics" />{t("Текст песни")}</span>
       <div className="lyrics-header-actions">
         {onToggleMaximize && (
           <button
@@ -164,8 +163,8 @@ export default function LyricsPage({ onClose, mobile, shown, onExited, children,
     </header>
     {!mobile && <LyricsToolbar appearance={appearance} onChange={setAppearance} onChooseTrack={() => setToolDialog('track')} />}
     <div className="lyrics-layout" data-cover={appearance.showCover}>
-      <div className="lyrics-now-playing" key={track.id}>
-        {appearance.showCover && <PlaylistCover url={track.coverUrl} name={t("Обложка: {0}", track.title)} className="lyrics-cover" />}
+      {appearance.showCover && <div className="lyrics-now-playing" key={track.id}>
+        <PlaylistCover url={track.coverUrl} name={t("Обложка: {0}", track.title)} className="lyrics-cover" />
         <div className="lyrics-track-info"><h1>{track.title}</h1><p>{track.artist}</p></div>
         {lyrics && <div className="lyrics-credit">
           <button
@@ -179,7 +178,7 @@ export default function LyricsPage({ onClose, mobile, shown, onExited, children,
             <span className="lyrics-source-arrow" aria-hidden="true">›</span>
           </button>
         </div>}
-      </div>
+      </div>}
       <div className="lyrics-reading" aria-busy={busy}>
         {busy ? <div className="lyrics-state" role="status"><MusicLoader variant="compact" label={t("Ищем текст песни")} /><h2>{t("Ищем текст песни")}</h2></div>
           : lyrics ? <LyricStage key={requestKey} lyrics={lyrics} offset={offset} mode={lyricsMode} mobile={mobile} followPlayback={!alternateItem} />

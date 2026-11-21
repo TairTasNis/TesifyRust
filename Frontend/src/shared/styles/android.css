@@ -116,6 +116,14 @@
 .desktop--mobile .collection-meta { gap: 3px 8px; }
 .desktop--mobile .collection-meta > span:not(:first-child)::before { padding-right: 7px; }
 
+/* Плейлист в библиотеке */
+
+.desktop--mobile .playlist-hero { grid-template-columns: minmax(0, 1fr); justify-items: center; text-align: center; }
+.desktop--mobile .playlist-hero-cover { width: min(193px, 80%, 48dvh); }
+.desktop--mobile .playlist-description { margin-inline: auto; }
+.desktop--mobile :is(.playlist-meta, .playlist-actions, .track-date-column .track-sort) { justify-content: center; }
+.desktop--mobile .track-table .track-date-column { text-align: center; vertical-align: middle; }
+
 /* Текст песни */
 
 .desktop--mobile .lyrics-page { opacity: 1; filter: none; transform: none; transition: none; }
@@ -146,8 +154,7 @@
   .desktop--mobile .lyrics-track-info h1 { font-size: 17px; }
   .desktop--mobile .lyrics-credit { display: flex; margin-top: 2px; }
   .desktop--mobile .lyrics-line { --lyrics-base-size: clamp(19px, 5.4dvh, 26px); padding-block: 7px; }
-  .desktop--mobile .lyrics-layout[data-cover="false"] { grid-template-columns: minmax(0, 780px); grid-template-rows: auto minmax(0, 1fr); }
-  .desktop--mobile .lyrics-layout[data-cover="false"] .lyrics-now-playing { display: grid; }
+  .desktop--mobile .lyrics-layout[data-cover="false"] { grid-template-columns: minmax(0, 780px); gap: 0; }
 }
 
 /* Диалог настроек текста */
