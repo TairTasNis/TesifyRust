@@ -11,9 +11,9 @@ import PlaylistCover from '../../shared/ui/PlaylistCover/PlaylistCover'
 import { createPlaylist } from './api'
 import './LibraryPage.css'
 
-type Props = { onOpenPlaylist: (id: string) => void; onOpenCatalog: OpenCatalog }
+type Props = { onOpenPlaylist: (id: string) => void; onOpenCatalog: OpenCatalog; onOpenDownloads: () => void }
 
-export default function LibraryPage({ onOpenPlaylist, onOpenCatalog }: Props) {
+export default function LibraryPage({ onOpenPlaylist, onOpenCatalog, onOpenDownloads }: Props) {
   const t = useTranslation()
   const { index, error, refresh } = useLibrary()
   const [editing, setEditing] = useState(false)
@@ -24,6 +24,12 @@ export default function LibraryPage({ onOpenPlaylist, onOpenCatalog }: Props) {
         <h1>{t("Библиотека")}</h1>
         <Button className="library-create" onClick={() => setEditing(true)}><Icon name="plus" />{t("Создать плейлист")}</Button>
       </header>
+      <button type="button" className="library-downloads" onClick={onOpenDownloads}>
+        <Icon name="import" />
+        <span>{t('Скачанные треки')}</span>
+        <span className="library-download-count" aria-label={trackCount(0)}>0</span>
+        <Icon name="chevron" />
+      </button>
 
       {error && <div className="library-message" role="alert"><Icon name="library" /><h2>{t("Библиотека недоступна")}</h2><p>{t(error)}</p><Button variant="secondary" onClick={() => { void refresh() }}>{t("Попробовать снова")}</Button></div>}
       {!index && !error && <MusicLoader label={t("Загружаем библиотеку")} />}

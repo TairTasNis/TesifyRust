@@ -1,11 +1,11 @@
 use super::models::{
-    CollectionEdit, ImportResult, LibraryIndex, Playlist, PlaylistDraft, PlaylistSummary,
-    SavedCollection, Track, TrackMembershipEdit,
+    BulkMembershipEdit, CollectionEdit, ImportResult, LibraryIndex, Playlist, PlaylistDraft,
+    PlaylistSummary, SavedCollection, SpotifyImport, Track,
 };
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     fs::{self, File, OpenOptions},
     io::Write,
     path::PathBuf,
@@ -123,9 +123,9 @@ impl LibraryStore {
 
     pub fn edit_memberships(
         &self,
-        edit: TrackMembershipEdit,
-        catalog_track: Option<Track>,
-    ) -> Result<(LibraryIndex, Option<Track>), String> {
+        edit: BulkMembershipEdit,
+        mut sources: HashMap<String, Track>,
+    ) -> Result<(LibraryIndex, Vec<Track>), String> {
         let _lock = self.lock()?;
         let mut data = self.read()?;
         let add: HashSet<_> = edit.add.into_iter().collect();
@@ -136,35 +136,43 @@ impl LibraryStore {
         {
             return Err("Плейлист не найден.".into());
         }
-        let source = data
-            .playlists
-            .iter()
-            .flat_map(|playlist| &playlist.tracks)
-            .find(|track| track.spotify_id == edit.spotify_id)
-            .cloned()
-            .or(catalog_track);
+        let requested: HashSet<_> = edit.spotify_ids.iter().collect();
+        for track in data.playlists.iter().flat_map(|playlist| &playlist.tracks) {
+            if requested.contains(&track.spotify_id) {
+                sources.insert(track.spotify_id.clone(), track.clone());
+            }
+        }
         let now = Utc::now().timestamp_millis();
         let mut changed = false;
         for playlist in &mut data.playlists {
             let before = playlist.tracks.len();
             if add.contains(&playlist.id) {
-                if !playlist
+                let mut existing: HashSet<_> = playlist
                     .tracks
                     .iter()
-                    .any(|track| track.spotify_id == edit.spotify_id)
-                {
-                    let mut track = source
-                        .clone()
+                    .map(|track| track.spotify_id.clone())
+                    .collect();
+                for id in &edit.spotify_ids {
+                    if !existing.insert(id.clone()) {
+                        continue;
+                    }
+                    let mut track = sources
+                        .get(id)
+                        .cloned()
                         .ok_or("Обновите страницу каталога и попробуйте снова.")?;
                     track.id = Uuid::new_v4().to_string();
                     track.added_at = now;
                     track.source_added_at = None;
+                    playlist
+                        .spotify_sync
+                        .managed_tracks
+                        .remove(&track.spotify_id);
                     playlist.tracks.push(track);
                 }
             } else if remove.contains(&playlist.id) {
                 playlist
                     .tracks
-                    .retain(|track| track.spotify_id != edit.spotify_id);
+                    .retain(|track| !requested.contains(&track.spotify_id));
             }
             if playlist.tracks.len() != before {
                 playlist.updated_at = now;
@@ -174,7 +182,7 @@ impl LibraryStore {
         if changed {
             self.save(&data)?;
         }
-        Ok((data.into_index(), source))
+        Ok((data.into_index(), sources.into_values().collect()))
     }
 
     pub fn edit_collection(
@@ -223,6 +231,7 @@ impl LibraryStore {
             created_at: now,
             updated_at: now,
             tracks: Vec::new(),
+            spotify_sync: Default::default(),
         };
         data.playlists.push(playlist.clone());
         self.save(&data)?;
@@ -261,10 +270,8 @@ impl LibraryStore {
     pub fn append_import(
         &self,
         id: &str,
-        tracks: Vec<Track>,
-        source_name: String,
-        source_cover: Option<String>,
-        unavailable_count: usize,
+        source: SpotifyImport,
+        auto_sync: bool,
     ) -> Result<ImportResult, String> {
         let _lock = self.lock()?;
         let mut data = self.read()?;
@@ -273,23 +280,25 @@ impl LibraryStore {
             .iter_mut()
             .find(|playlist| playlist.id == id)
             .ok_or("Плейлист не найден.")?;
-        let mut ids: HashSet<_> = playlist
-            .tracks
-            .iter()
-            .map(|track| track.spotify_id.clone())
-            .collect();
-        let mut duplicate_count = 0;
-        let mut added_count = 0;
-        for track in tracks {
-            if ids.insert(track.spotify_id.clone()) {
-                playlist.tracks.push(track);
-                added_count += 1;
-            } else {
-                duplicate_count += 1;
+        let added_count = append_tracks(playlist, &source.tracks, auto_sync);
+        if auto_sync {
+            let previous = playlist
+                .spotify_sync
+                .sources
+                .insert(source.id, source.track_ids);
+            if let Some(previous) = previous {
+                remove_detached_tracks(playlist, &previous);
             }
+        } else {
+            playlist.spotify_sync.sources.remove(&source.id);
+            let linked = linked_track_ids(playlist);
+            playlist
+                .spotify_sync
+                .managed_tracks
+                .retain(|id| linked.contains(id));
         }
         if playlist.cover_url.is_none() {
-            playlist.cover_url = source_cover;
+            playlist.cover_url = source.cover_url;
         }
         playlist.updated_at = Utc::now().timestamp_millis();
         let playlist = playlist.clone();
@@ -297,11 +306,108 @@ impl LibraryStore {
         Ok(ImportResult {
             playlist,
             added_count,
-            duplicate_count,
-            unavailable_count,
-            source_name,
+            duplicate_count: source.tracks.len() - added_count,
+            unavailable_count: source.unavailable_count,
+            source_name: source.name,
         })
     }
+
+    pub fn spotify_sync_sources(
+        &self,
+    ) -> Result<BTreeMap<String, Vec<(String, Vec<String>)>>, String> {
+        let _lock = self.lock()?;
+        let mut sources = BTreeMap::<_, Vec<_>>::new();
+        for playlist in self.read()?.playlists {
+            for (source, tracks) in playlist.spotify_sync.sources {
+                sources
+                    .entry(source)
+                    .or_default()
+                    .push((playlist.id.clone(), tracks));
+            }
+        }
+        Ok(sources)
+    }
+
+    pub fn sync_spotify_source(
+        &self,
+        source: &SpotifyImport,
+        destinations: &[(String, Vec<String>)],
+    ) -> Result<bool, String> {
+        let _lock = self.lock()?;
+        let mut data = self.read()?;
+        let mut changed = false;
+        for (id, expected) in destinations {
+            let Some(playlist) = data
+                .playlists
+                .iter_mut()
+                .find(|playlist| &playlist.id == id)
+            else {
+                continue;
+            };
+            if playlist.spotify_sync.sources.get(&source.id) != Some(expected) {
+                continue;
+            }
+            let added = append_tracks(playlist, &source.tracks, true);
+            if added == 0 && expected == &source.track_ids {
+                continue;
+            }
+            playlist
+                .spotify_sync
+                .sources
+                .insert(source.id.clone(), source.track_ids.clone());
+            remove_detached_tracks(playlist, expected);
+            playlist.updated_at = Utc::now().timestamp_millis();
+            changed = true;
+        }
+        if changed {
+            self.save(&data)?;
+        }
+        Ok(changed)
+    }
+}
+
+fn append_tracks(playlist: &mut Playlist, tracks: &[Track], managed: bool) -> usize {
+    let mut ids: HashSet<_> = playlist
+        .tracks
+        .iter()
+        .map(|track| track.spotify_id.clone())
+        .collect();
+    let before = playlist.tracks.len();
+    for track in tracks {
+        if ids.insert(track.spotify_id.clone()) {
+            let mut local = track.clone();
+            local.id = Uuid::new_v4().to_string();
+            playlist.tracks.push(local);
+            if managed {
+                playlist
+                    .spotify_sync
+                    .managed_tracks
+                    .insert(track.spotify_id.clone());
+            }
+        }
+    }
+    playlist.tracks.len() - before
+}
+
+fn linked_track_ids(playlist: &Playlist) -> HashSet<String> {
+    playlist
+        .spotify_sync
+        .sources
+        .values()
+        .flatten()
+        .cloned()
+        .collect()
+}
+
+fn remove_detached_tracks(playlist: &mut Playlist, previous: &[String]) {
+    let linked = linked_track_ids(playlist);
+    let detached: HashSet<_> = previous
+        .iter()
+        .filter(|id| !linked.contains(*id) && playlist.spotify_sync.managed_tracks.remove(*id))
+        .collect();
+    playlist
+        .tracks
+        .retain(|track| !detached.contains(&track.spotify_id));
 }
 
 #[cfg(not(target_os = "android"))]
@@ -391,6 +497,17 @@ mod tests {
         }
     }
 
+    fn source(id: &str, tracks: &[&str]) -> SpotifyImport {
+        SpotifyImport {
+            id: id.into(),
+            name: "Spotify name".into(),
+            cover_url: None,
+            tracks: tracks.iter().map(|id| track(id)).collect(),
+            track_ids: tracks.iter().map(|id| (*id).into()).collect(),
+            unavailable_count: 0,
+        }
+    }
+
     #[test]
     fn playlists_survive_reopening_and_editing() {
         let directory = TestDirectory::new();
@@ -420,10 +537,12 @@ mod tests {
         let result = store
             .append_import(
                 &created.id,
-                vec![track("one"), track("two"), track("one")],
-                "Spotify name".into(),
-                Some("https://i.scdn.co/source".into()),
-                1,
+                SpotifyImport {
+                    cover_url: Some("https://i.scdn.co/source".into()),
+                    unavailable_count: 1,
+                    ..source("first", &["one", "two", "one"])
+                },
+                false,
             )
             .unwrap();
         assert_eq!(
@@ -440,17 +559,60 @@ mod tests {
             Some("https://i.ibb.co/custom.png")
         );
         let repeated = store
-            .append_import(
-                &created.id,
-                vec![track("two")],
-                "Spotify name".into(),
-                None,
-                0,
-            )
+            .append_import(&created.id, source("first", &["two"]), false)
             .unwrap();
         assert_eq!((repeated.added_count, repeated.duplicate_count), (0, 1));
         assert_eq!(repeated.playlist.tracks.len(), 2);
         assert_eq!(repeated.playlist.tracks[0].source_added_at, Some(2));
+    }
+
+    #[test]
+    fn spotify_sync_keeps_local_tracks_and_shared_source_tracks_after_reopening() {
+        let directory = TestDirectory::new();
+        let store = directory.store();
+        let playlist = store.create(draft("Mixed sources")).unwrap();
+        let id = &playlist.id;
+        store
+            .append_import(id, source("local", &["manual"]), false)
+            .unwrap();
+        store
+            .append_import(id, source("first", &["manual", "shared", "removed"]), true)
+            .unwrap();
+        let original = store.get(id).unwrap().tracks[1].id.clone();
+        store
+            .append_import(id, source("second", &["shared"]), true)
+            .unwrap();
+
+        let reopened = directory.store();
+        let plan = reopened.spotify_sync_sources().unwrap();
+        assert!(
+            reopened
+                .sync_spotify_source(&source("first", &["new"]), &plan["first"])
+                .unwrap()
+        );
+        let tracks = reopened.get(id).unwrap().tracks;
+        assert_eq!(
+            tracks
+                .iter()
+                .map(|track| track.spotify_id.as_str())
+                .collect::<Vec<_>>(),
+            ["manual", "shared", "new"]
+        );
+        assert_eq!(tracks[1].id, original);
+        assert!(
+            !reopened
+                .sync_spotify_source(&source("first", &["old"]), &plan["first"])
+                .unwrap()
+        );
+        reopened
+            .append_import(id, source("second", &["shared"]), false)
+            .unwrap();
+        assert!(
+            !reopened
+                .sync_spotify_source(&source("second", &[]), &plan["second"])
+                .unwrap()
+        );
+        assert_eq!(reopened.get(id).unwrap().tracks.len(), 3);
     }
 
     #[test]
@@ -478,15 +640,18 @@ mod tests {
         let first = store.create(draft("First")).unwrap();
         let second = store.create(draft("Second")).unwrap();
         let third = store.create(draft("Third")).unwrap();
-        let edit = |add, remove| TrackMembershipEdit {
-            spotify_id: "song".into(),
+        let edit = |add, remove| BulkMembershipEdit {
+            spotify_ids: vec!["song".into(), "other".into()],
             add,
             remove,
         };
         store
             .edit_memberships(
                 edit(vec![first.id.clone(), second.id.clone()], vec![]),
-                Some(track("song")),
+                HashMap::from([
+                    ("song".into(), track("song")),
+                    ("other".into(), track("other")),
+                ]),
             )
             .unwrap();
         store
@@ -495,7 +660,7 @@ mod tests {
                     vec![third.id.clone(), second.id.clone()],
                     vec![first.id.clone()],
                 ),
-                None,
+                HashMap::new(),
             )
             .unwrap();
 
@@ -507,7 +672,8 @@ mod tests {
         assert!(store.get(&first.id).unwrap().tracks.is_empty());
         let second = store.get(&second.id).unwrap();
         let third = store.get(&third.id).unwrap();
-        assert_eq!(second.tracks.len(), 1);
+        assert_eq!(second.tracks.len(), 2);
+        assert_eq!(third.tracks.len(), 2);
         assert_ne!(second.tracks[0].id, third.tracks[0].id);
     }
 

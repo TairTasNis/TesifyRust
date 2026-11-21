@@ -1,0 +1,20 @@
+.track-menu-popover {
+  position: fixed;
+  z-index: 30;
+  min-width: 210px;
+  max-width: calc(100vw - 16px);
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 8px 28px #0003;
+}
+.track-menu-actions { display: grid; gap: 2px; }
+.track-menu-actions button { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; color: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.track-menu-popover button { min-height: 36px; }
+.track-menu-actions button:is(:hover, :focus-visible) { background: var(--surface-hover); }
+.track-menu-actions button:disabled { opacity: .45; cursor: default; }
+.track-menu-actions button svg { width: 16px; height: 16px; flex: none; }
+.track-table tr[data-selected] > td, .catalog-track-list tr[data-selected] > td { background: var(--accent-soft); }
+.track-table tbody tr, .catalog-track-list tbody tr { user-select: none; -webkit-touch-callout: none; }

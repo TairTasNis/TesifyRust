@@ -3,7 +3,7 @@
 // Original copyright (c) 2026 Tair Tasmukhambetov (@ttfotg), TFG License.
 // Guest token, persisted query, pagination and field mapping are preserved.
 
-use crate::shared::playlists::models::Track;
+use crate::shared::playlists::models::{SpotifyImport, Track};
 use crate::shared::spotify::mapping;
 use chrono::{DateTime, Utc};
 use regex::Regex;
@@ -13,13 +13,6 @@ use uuid::Uuid;
 
 const SPOTIFY_PLAYLIST_HASH: &str =
     "9c53fb83f35c6a177be88bf1b67cb080b853e86b576ed174216faa8f9164fc8f";
-
-pub struct ImportedPlaylist {
-    pub name: String,
-    pub cover_url: Option<String>,
-    pub tracks: Vec<Track>,
-    pub unavailable_count: usize,
-}
 
 pub fn playlist_id(input: &str) -> Result<String, String> {
     let url =
@@ -54,10 +47,7 @@ pub fn playlist_id(input: &str) -> Result<String, String> {
     Ok(id.into())
 }
 
-pub async fn extract_spotify_playlist(
-    http: &Client,
-    input: &str,
-) -> Result<ImportedPlaylist, String> {
+pub async fn extract_spotify_playlist(http: &Client, input: &str) -> Result<SpotifyImport, String> {
     let id = playlist_id(input)?;
     let html = http
         .get("https://open.spotify.com/embed/playlist/37i9dQZF1DXcBWIGoYBM5M")
@@ -77,13 +67,16 @@ pub async fn extract_spotify_playlist(
         .map(|value| value.as_str().to_string())
         .ok_or("Spotify не выдал гостевой доступ. Попробуйте позже.")?;
 
-    let mut result = ImportedPlaylist {
+    let mut result = SpotifyImport {
+        id: id.clone(),
         name: String::new(),
         cover_url: None,
         tracks: Vec::new(),
+        track_ids: Vec::new(),
         unavailable_count: 0,
     };
     let mut offset = 0_u64;
+    let mut expected_total = None;
     const LIMIT: u64 = 100;
     let imported_at = Utc::now().timestamp_millis();
     loop {
@@ -143,14 +136,25 @@ pub async fn extract_spotify_playlist(
         if total > 50_000 {
             return Err("В плейлисте слишком много треков для одного импорта.".into());
         }
+        if *expected_total.get_or_insert(total) != total {
+            return Err("Плейлист Spotify изменился во время загрузки. Попробуйте ещё раз.".into());
+        }
         let items = playlist
             .pointer("/content/items")
             .and_then(Value::as_array)
             .ok_or("Spotify не вернул список треков.")?;
-        if items.is_empty() && offset < total {
+        if (items.is_empty() && offset < total) || offset + items.len() as u64 > total {
             return Err("Spotify вернул не все треки. Импорт отменён; попробуйте ещё раз.".into());
         }
         for item in items {
+            if let Some(id) = item
+                .pointer("/itemV2/data/uri")
+                .and_then(Value::as_str)
+                .or_else(|| item.pointer("/itemV2/uri").and_then(Value::as_str))
+                .and_then(|uri| uri.strip_prefix("spotify:track:"))
+            {
+                result.track_ids.push(id.into());
+            }
             match spotify_playlist_track_from_item(item, imported_at) {
                 Some(track) => result.tracks.push(track),
                 None => result.unavailable_count += 1,

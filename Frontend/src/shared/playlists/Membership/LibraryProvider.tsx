@@ -5,20 +5,23 @@ import type { LibraryIndex, SavedCollection } from '../types'
 import TrackPlaylistDialog from './TrackPlaylistDialog'
 
 type TrackTarget = { spotifyId: string; title: string }
+type MembershipEdit = { spotifyIds: string[]; add: string[]; remove: string[] }
 type LibraryState = {
   index: LibraryIndex | null
   error: string | null
   refresh: () => Promise<void>
-  choosePlaylists: (track: TrackTarget) => void
+  choosePlaylists: (track: TrackTarget | TrackTarget[]) => void
+  changeMemberships: (edit: MembershipEdit) => Promise<void>
   saveCollection: (kind: SavedCollection['kind'], id: string, saved: boolean) => Promise<void>
 }
 
 const LibraryContext = createContext<LibraryState | null>(null)
+let startupSync: Promise<boolean> | undefined
 
 export function LibraryProvider({ children }: { children: ReactNode }) {
   const [index, setIndex] = useState<LibraryIndex | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [target, setTarget] = useState<TrackTarget | null>(null)
+  const [target, setTarget] = useState<TrackTarget[] | null>(null)
   const request = useRef(0)
   const pending = useRef(Promise.resolve())
 
@@ -36,8 +39,11 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const load = () => { void refresh() }
     load()
+    let active = true
+    startupSync ??= backend<boolean>('sync_spotify_playlists', {}, '/playlists/sync/spotify', 'POST').catch(() => false)
+    void startupSync.then(changed => { if (active && changed) load() })
     window.addEventListener('focus', load)
-    return () => { ++request.current; window.removeEventListener('focus', load) }
+    return () => { active = false; ++request.current; window.removeEventListener('focus', load) }
   }, [refresh])
 
   const editLibrary = useCallback((operation: () => Promise<LibraryIndex>) => {
@@ -56,14 +62,18 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     return editLibrary(() => backend('set_saved_collection', { edit }, '/library/collections', 'POST', edit))
   }, [editLibrary])
 
-  const value = useMemo(() => ({ index, error, refresh, choosePlaylists: setTarget, saveCollection }), [index, error, refresh, saveCollection])
+  const changeMemberships = useCallback((edit: MembershipEdit) =>
+    editLibrary(() => backend('set_bulk_track_memberships', { edit }, '/library/memberships/bulk', 'POST', edit)), [editLibrary])
+  const choosePlaylists = useCallback((track: TrackTarget | TrackTarget[]) => {
+    setTarget(Array.isArray(track) ? track : [track])
+  }, [])
+  const value = useMemo(() => ({ index, error, refresh, choosePlaylists, changeMemberships, saveCollection }), [index, error, refresh, choosePlaylists, changeMemberships, saveCollection])
 
   return <LibraryContext.Provider value={value}>
     {children}
-    {target && <TrackPlaylistDialog track={target} index={index} error={error} onRetry={refresh} onClose={() => setTarget(null)}
+    {target && <TrackPlaylistDialog tracks={target} index={index} error={error} onRetry={refresh} onClose={() => setTarget(null)}
       onSave={async (add, remove) => {
-        const edit = { spotifyId: target.spotifyId, add, remove }
-        await editLibrary(() => backend('set_track_memberships', { edit }, '/library/memberships', 'POST', edit))
+        await changeMemberships({ spotifyIds: target.map(track => track.spotifyId), add, remove })
         setTarget(null)
       }} />}
   </LibraryContext.Provider>

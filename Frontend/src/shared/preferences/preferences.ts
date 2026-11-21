@@ -3,15 +3,17 @@ import { useSyncExternalStore } from 'react'
 export type Language = 'ru' | 'en' | 'kk'
 type Theme = 'light' | 'dark'
 export type LyricsMode = 'letter' | 'word' | 'line'
+export const lyricsModes: Record<LyricsMode, string> = { letter: 'По буквам', word: 'По словам', line: 'По строкам' }
 type Preferences = {
   language: Language
   theme: Theme
   accentEnabled: boolean
   accentColor: string
   lyricsMode: LyricsMode
+  lyricsBackground: boolean
 }
 const defaults: Preferences = {
-  language: 'ru', theme: 'light', accentEnabled: false, accentColor: '#5e80cf', lyricsMode: 'letter',
+  language: 'ru', theme: 'light', accentEnabled: false, accentColor: '#5e80cf', lyricsMode: 'letter', lyricsBackground: true,
 }
 const storageKey = 'tesify.preferences'
 const listeners = new Set<() => void>()
@@ -25,6 +27,7 @@ function readPreferences(): Preferences {
       accentEnabled: saved?.accentEnabled === true,
       accentColor: typeof saved?.accentColor === 'string' && /^#[\da-f]{6}$/i.test(saved.accentColor) ? saved.accentColor : defaults.accentColor,
       lyricsMode: saved?.lyricsMode === 'word' || saved?.lyricsMode === 'line' ? saved.lyricsMode : defaults.lyricsMode,
+      lyricsBackground: saved?.lyricsBackground !== false,
     }
   } catch { return defaults }
 }

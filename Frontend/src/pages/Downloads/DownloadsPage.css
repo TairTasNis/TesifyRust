@@ -1,0 +1,3 @@
+.downloads-back { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; margin-bottom: 8px; padding: 0 4px; border: 0; background: transparent; color: var(--muted); font-size: 13px; cursor: pointer; }
+.downloads-back:hover { color: var(--ink); }
+.downloads-back svg { width: 17px; height: 17px; }

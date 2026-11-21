@@ -4,4 +4,4 @@ import type { ImportResult, Playlist, PlaylistDraft } from '../../shared/playlis
 export const getPlaylist = (id: string) => backend<Playlist>('get_playlist', { id }, `/playlists/${encodeURIComponent(id)}`)
 export const deletePlaylist = (id: string) => backend<null>('delete_playlist', { id }, `/playlists/${encodeURIComponent(id)}`, 'DELETE')
 export const updatePlaylist = (id: string, draft: PlaylistDraft) => backend<Playlist>('update_playlist', { id, draft }, `/playlists/${encodeURIComponent(id)}`, 'PUT', draft)
-export const importSpotify = (id: string, url: string) => backend<ImportResult>('import_spotify_playlist', { id, url }, `/playlists/${encodeURIComponent(id)}/import/spotify`, 'POST', { url })
+export const importSpotify = (id: string, url: string, autoSync: boolean) => backend<ImportResult>('import_spotify_playlist', { id, url, autoSync }, `/playlists/${encodeURIComponent(id)}/import/spotify`, 'POST', { url, autoSync })

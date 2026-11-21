@@ -1,5 +1,7 @@
 import { useTranslation } from '../../shared/preferences/i18n'
 import { useEffect, useRef, useState } from 'react'
+import { lyricsModes, setPreferences, usePreferences } from '../../shared/preferences/preferences'
+import type { LyricsMode } from '../../shared/preferences/preferences'
 import Button from '../../shared/ui/Button/Button'
 import Modal from '../../shared/ui/Modal/Modal'
 import Icon from '../../shared/ui/Icon/Icon'
@@ -128,7 +130,13 @@ export function LyricsSettings({ appearance, onChange, onClose, onChooseTrack }:
 
 function AppearanceFields({ appearance, onChange }: AppearanceProps) {
   const t = useTranslation()
+  const { lyricsMode } = usePreferences()
   return <>
+    <label className="lyrics-tool-select">{t('Подсветка текста')}
+      <select value={lyricsMode} onChange={event => setPreferences({ lyricsMode: event.currentTarget.value as LyricsMode })}>
+        {Object.entries(lyricsModes).map(([value, label]) => <option value={value} key={value}>{t(label)}</option>)}
+      </select>
+    </label>
     <label className="lyrics-tool-scale">
       <span>{t("Масштаб текста")} <output>{appearance.textScale}%</output></span>
       <input type="range" min="70" max="150" step="5" value={appearance.textScale} aria-label={t("Масштаб текста")} aria-valuetext={`${appearance.textScale}%`}

@@ -37,7 +37,7 @@ const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 export default function LyricsPage({ onClose, mobile, shown, onExited, children, isMaximized = false, onToggleMaximize }: Props) {
   const t = useTranslation()
   const player = usePlayback()
-  const { lyricsMode } = usePreferences()
+  const { lyricsMode, lyricsBackground } = usePreferences()
   const { appearance, setAppearance, style } = useLyricsAppearance()
   const playingKey = `${player.playlistId}/${player.current?.id}`
   const [override, setOverride] = useState<{ playingKey: string; item: CatalogItem } | null>(null)
@@ -142,7 +142,7 @@ export default function LyricsPage({ onClose, mobile, shown, onExited, children,
   const lyrics = response?.lyrics
   return <section className="lyrics-page" id="track-lyrics" aria-label={t("Текст песни «{0}»", track.title)} ref={pageRef}
     data-closing={closing || !shown || undefined} inert={!shown} style={style as CSSProperties}>
-    <LyricsBackground coverUrl={track.coverUrl} playing={player.playing && !player.loading} mobile={mobile} />
+    {lyricsBackground && <LyricsBackground coverUrl={track.coverUrl} playing={player.playing && !player.loading} mobile={mobile} />}
     <header className="lyrics-header" data-tauri-drag-region>
       <div className="lyrics-header-actions">
         {onToggleMaximize && (

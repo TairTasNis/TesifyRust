@@ -1,11 +1,11 @@
-import { setPreferences, usePreferences } from '../../shared/preferences/preferences'
+import { useState } from 'react'
+import { lyricsModes, setPreferences, usePreferences } from '../../shared/preferences/preferences'
 import type { Language, LyricsMode } from '../../shared/preferences/preferences'
 import { useTranslation } from '../../shared/preferences/i18n'
 import StorageSettings from './StorageSettings'
 import './SettingsPage.css'
 
 const languages = { ru: 'Русский', en: 'English', kk: 'Қазақша' }
-const lyricsModes: Record<LyricsMode, string> = { letter: 'По буквам', word: 'По словам', line: 'По строкам' }
 const labels = {
   ru: ['Настройки', 'Основное', 'Язык интерфейса', 'Тёмная тема'],
   en: ['Settings', 'General', 'Interface language', 'Dark theme'],
@@ -13,7 +13,7 @@ const labels = {
 }
 
 export default function SettingsPage({ onAbout }: { onAbout?: () => void }) {
-  const { language, theme, accentEnabled, accentColor, lyricsMode } = usePreferences()
+  const { language, theme, accentEnabled, accentColor, lyricsMode, lyricsBackground } = usePreferences()
   const t = useTranslation()
   const [title, general, languageLabel, themeLabel] = labels[language]
   const [section, setSection] = useState<'general' | 'storage'>('general')
@@ -45,6 +45,10 @@ export default function SettingsPage({ onAbout }: { onAbout?: () => void }) {
           onChange={event => setPreferences({ accentColor: event.currentTarget.value })} /></span>
       </label>}
       <label className="settings-row">
+        <span>{t('Фон на странице текста песни')}</span>
+        <input type="checkbox" role="switch" checked={lyricsBackground} onChange={event => setPreferences({ lyricsBackground: event.currentTarget.checked })} />
+      </label>
+      <label className="settings-row">
         <span>{t('Предпочитать текст песни')}</span>
         <select value={lyricsMode} onChange={event => setPreferences({ lyricsMode: event.currentTarget.value as LyricsMode })}>
           {Object.entries(lyricsModes).map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}
@@ -54,4 +58,3 @@ export default function SettingsPage({ onAbout }: { onAbout?: () => void }) {
     {onAbout && <button type="button" className="settings-about" onClick={onAbout}>{t("О программе Tesify")}</button>}
   </main>
 }
-import { useState } from 'react'

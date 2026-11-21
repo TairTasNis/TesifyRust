@@ -1,5 +1,5 @@
 use crate::{
-    pages::{library::covers, playlist::commands::import_spotify},
+    pages::{library::covers, playlist::commands::{import_spotify, sync_linked_playlists}},
     shared::{playlists::models::*, services::AppServices},
 };
 use axum::{
@@ -24,10 +24,12 @@ pub fn router(services: AppServices) -> Router {
         .route("/playlists", get(list).post(create))
         .route("/library", get(library_index))
         .route("/library/memberships", post(track_memberships))
+        .route("/library/memberships/bulk", post(bulk_track_memberships))
         .route("/library/collections", post(saved_collection))
         .route("/settings/storage", get(storage_usage).delete(clear_song_previews))
         .route("/playlists/{id}", get(detail).put(update).delete(delete))
         .route("/playlists/{id}/import/spotify", post(import))
+        .route("/playlists/sync/spotify", post(sync_spotify))
         .route("/covers", post(upload))
         .route("/search/spotify", get(search_spotify))
         .route("/spotify/artists/{id}", get(spotify_artist))
@@ -64,6 +66,9 @@ async fn library_index(State(services): State<AppServices>) -> ApiResult<Library
 async fn track_memberships(State(services): State<AppServices>, Json(edit): Json<TrackMembershipEdit>) -> ApiResult<LibraryIndex> {
     crate::pages::library::commands::edit_memberships(&services, edit).await.map(Json).map_err(error)
 }
+async fn bulk_track_memberships(State(services): State<AppServices>, Json(edit): Json<BulkMembershipEdit>) -> ApiResult<LibraryIndex> {
+    crate::pages::library::commands::edit_bulk_memberships(&services, edit).await.map(Json).map_err(error)
+}
 async fn saved_collection(State(services): State<AppServices>, Json(edit): Json<CollectionEdit>) -> ApiResult<LibraryIndex> {
     crate::pages::library::commands::edit_collection(&services, edit).await.map(Json).map_err(error)
 }
@@ -96,18 +101,24 @@ async fn delete(State(services): State<AppServices>, Path(id): Path<String>) -> 
     services.library.delete(&id).map(Json).map_err(error)
 }
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct ImportBody {
     url: String,
+    #[serde(default)]
+    auto_sync: bool,
 }
 async fn import(
     State(services): State<AppServices>,
     Path(id): Path<String>,
     Json(body): Json<ImportBody>,
 ) -> ApiResult<ImportResult> {
-    import_spotify(&services, &id, &body.url)
+    import_spotify(&services, &id, &body.url, body.auto_sync)
         .await
         .map(Json)
         .map_err(error)
+}
+async fn sync_spotify(State(services): State<AppServices>) -> ApiResult<bool> {
+    sync_linked_playlists(&services).await.map(Json).map_err(error)
 }
 async fn upload(
     State(services): State<AppServices>,

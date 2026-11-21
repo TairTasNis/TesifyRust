@@ -105,10 +105,16 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   const reorderQueue = useCallback((playlistId: string, tracks: Track[]) => {
     const queue = queueRef.current
     if (!queue || queue.playlistId !== playlistId) return
-    const currentId = queue.tracks[queue.index]?.id
-    const index = tracks.findIndex(track => track.id === currentId)
-    if (index < 0) return
-    const nextQueue = { playlistId, tracks: [...tracks], index }
+    const current = queue.tracks[queue.index]
+    const reordered = [...tracks]
+    let index = reordered.findIndex(track => track.id === current.id)
+    if (index < 0) {
+      const remaining = new Set(reordered.map(track => track.id))
+      const successor = queue.tracks.slice(queue.index + 1).find(track => remaining.has(track.id))
+      index = successor ? reordered.findIndex(track => track.id === successor.id) : reordered.length
+      reordered.splice(index, 0, current)
+    }
+    const nextQueue = { playlistId, tracks: reordered, index }
     queueRef.current = nextQueue
     setQueue(nextQueue)
   }, [])

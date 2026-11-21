@@ -10,3 +10,5 @@
 .import-provider small { display: block; margin-top: 5px; color: var(--muted); font-size: 10px; }
 .import-provider > svg { width: 17px; height: 17px; margin-left: auto; color: var(--muted); }
 .import-progress { margin-top: 22px; }
+.import-sync { display: flex; align-items: center; gap: 9px; min-height: 44px; margin-top: 10px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.import-sync input { width: 17px; height: 17px; flex: none; margin: 0; accent-color: var(--control-accent); }

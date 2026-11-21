@@ -1,7 +1,7 @@
 use crate::shared::{
     playlists::models::{
-        CollectionEdit, CollectionKind, CoverUpload, LibraryIndex, Playlist, PlaylistDraft,
-        PlaylistSummary, SavedCollection, TrackMembershipEdit, UploadedCover,
+        BulkMembershipEdit, CollectionEdit, CollectionKind, CoverUpload, LibraryIndex, Playlist,
+        PlaylistDraft, PlaylistSummary, SavedCollection, TrackMembershipEdit, UploadedCover,
     },
     services::AppServices,
 };
@@ -24,16 +24,44 @@ pub async fn edit_memberships(
     services: &AppServices,
     edit: TrackMembershipEdit,
 ) -> Result<LibraryIndex, String> {
-    let catalog_track = services.spotify.playback_track(&edit.spotify_id).ok();
+    edit_bulk_memberships(services, edit.into()).await
+}
+
+pub async fn edit_bulk_memberships(
+    services: &AppServices,
+    edit: BulkMembershipEdit,
+) -> Result<LibraryIndex, String> {
+    let sources = if edit.add.is_empty() {
+        Default::default()
+    } else {
+        edit.spotify_ids
+            .iter()
+            .filter_map(|id| {
+                services
+                    .spotify
+                    .playback_track(id)
+                    .ok()
+                    .map(|track| (id.clone(), track))
+            })
+            .collect()
+    };
     let library = services.library.clone();
-    let (index, source) =
-        tauri::async_runtime::spawn_blocking(move || library.edit_memberships(edit, catalog_track))
+    let (index, tracks) =
+        tauri::async_runtime::spawn_blocking(move || library.edit_memberships(edit, sources))
             .await
             .map_err(|_| "Не удалось сохранить библиотеку. Повторите попытку.")??;
-    if let Some(track) = source {
+    for track in tracks {
         services.spotify.remember_library_track(track);
     }
     Ok(index)
+}
+
+#[tauri::command]
+pub async fn set_bulk_track_memberships(
+    services: State<'_, AppServices>,
+    edit: BulkMembershipEdit,
+) -> Result<LibraryIndex, String> {
+    edit_bulk_memberships(&services, edit).await
 }
 
 #[tauri::command]

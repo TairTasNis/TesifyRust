@@ -21,6 +21,7 @@ export type Playlist = {
   createdAt: number
   updatedAt: number
   tracks: Track[]
+  spotifySync?: { sources: Record<string, string[]> }
 }
 
 export type PlaylistSummary = Pick<Playlist, 'id' | 'name' | 'description' | 'coverUrl' | 'updatedAt'> & { trackCount: number }

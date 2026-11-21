@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { errorMessage } from '../../lib/backend'
 import { useTranslation } from '../../preferences/i18n'
+import { trackCount } from '../format'
 import Button from '../../ui/Button/Button'
 import Modal from '../../ui/Modal/Modal'
 import MusicLoader from '../../ui/MusicLoader/MusicLoader'
@@ -9,7 +10,7 @@ import type { LibraryIndex } from '../types'
 import './Membership.css'
 
 type Props = {
-  track: { spotifyId: string; title: string }
+  tracks: { spotifyId: string; title: string }[]
   index: LibraryIndex | null
   error: string | null
   onRetry: () => Promise<void>
@@ -17,15 +18,18 @@ type Props = {
   onSave: (add: string[], remove: string[]) => Promise<void>
 }
 
-export default function TrackPlaylistDialog({ track, index, error, onRetry, onClose, onSave }: Props) {
+export default function TrackPlaylistDialog({ tracks, index, error, onRetry, onClose, onSave }: Props) {
   const t = useTranslation()
   const [changes, setChanges] = useState<Record<string, boolean | undefined>>({})
   const [busy, setBusy] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
-  const original = new Set(index?.memberships[track.spotifyId])
-  const changed = (index?.playlists ?? []).filter(({ id }) => changes[id] !== undefined && changes[id] !== original.has(id))
+  const counts = new Map<string, number>()
+  for (const track of tracks) {
+    for (const id of index?.memberships[track.spotifyId] ?? []) counts.set(id, (counts.get(id) ?? 0) + 1)
+  }
+  const changed = (index?.playlists ?? []).filter(({ id }) => changes[id] !== undefined && (counts.get(id) ?? 0) !== (changes[id] ? tracks.length : 0))
 
-  return <Modal title={t('Выбрать плейлисты')} subtitle={track.title} busy={busy} onClose={onClose}>
+  return <Modal title={t('Выбрать плейлисты')} subtitle={tracks.length === 1 ? tracks[0].title : trackCount(tracks.length)} busy={busy} onClose={onClose}>
     {(close) => <form onSubmit={async event => {
       event.preventDefault()
       if (busy || !changed.length) return
@@ -44,7 +48,8 @@ export default function TrackPlaylistDialog({ track, index, error, onRetry, onCl
         {index.playlists.map(playlist => <label key={playlist.id}>
           <PlaylistCover url={playlist.coverUrl} name="" />
           <span>{playlist.name}</span>
-          <input type="checkbox" checked={changes[playlist.id] ?? original.has(playlist.id)} disabled={busy}
+          <input type="checkbox" checked={changes[playlist.id] ?? (counts.get(playlist.id) === tracks.length)} disabled={busy}
+            ref={input => { if (input) input.indeterminate = changes[playlist.id] === undefined && (counts.get(playlist.id) ?? 0) > 0 && counts.get(playlist.id) !== tracks.length }}
             onChange={event => { const checked = event.currentTarget.checked; setChanges(current => ({ ...current, [playlist.id]: checked })) }} />
         </label>)}
       </div> : <p className="playlist-membership-empty">{t('Сначала создайте плейлист в библиотеке.')}</p>)}

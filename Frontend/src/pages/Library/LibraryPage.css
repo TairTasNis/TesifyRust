@@ -4,6 +4,10 @@
 .library-header h1 { margin: 0; font-size: clamp(28px, 3vw, 39px); font-weight: 700; letter-spacing: -1.5px; line-height: 1.25; }
 .library-create.music-button { min-height: 40px; padding: 8px 15px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-ink); font-weight: 700; }
 .library-create.music-button > svg { width: 16px; height: 16px; }
+.library-downloads { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 12px; min-height: 55px; width: 100%; margin-top: 22px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); text-align: start; font-size: 14px; font-weight: 700; cursor: pointer; }
+.library-downloads:hover { background: var(--surface-hover); }
+.library-downloads > svg { width: 18px; height: 18px; color: var(--muted); }
+.library-download-count { color: var(--muted); font-variant-numeric: tabular-nums; }
 @media(hover: hover) and (pointer: fine) { .library-create.music-button:hover { background: var(--surface-hover); } }
 .library-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); align-items: start; gap: 31px 26px; margin-top: 36px; }
 .playlist-card { display: flex; min-width: 0; align-items: stretch; flex-direction: column; padding: 0; border: 0; border-radius: 16px 16px 0 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }

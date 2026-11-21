@@ -1,6 +1,6 @@
 use crate::shared::spotify::models::ArtistRef;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -37,6 +37,24 @@ pub struct TrackMembershipEdit {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct BulkMembershipEdit {
+    pub spotify_ids: Vec<String>,
+    pub add: Vec<String>,
+    pub remove: Vec<String>,
+}
+
+impl From<TrackMembershipEdit> for BulkMembershipEdit {
+    fn from(edit: TrackMembershipEdit) -> Self {
+        Self {
+            spotify_ids: vec![edit.spotify_id],
+            add: edit.add,
+            remove: edit.remove,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CollectionEdit {
     pub kind: CollectionKind,
     pub id: String,
@@ -69,6 +87,30 @@ pub struct Playlist {
     pub created_at: i64,
     pub updated_at: i64,
     pub tracks: Vec<Track>,
+    #[serde(default, skip_serializing_if = "SpotifySync::is_empty")]
+    pub spotify_sync: SpotifySync,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpotifySync {
+    pub sources: BTreeMap<String, Vec<String>>,
+    pub managed_tracks: HashSet<String>,
+}
+
+impl SpotifySync {
+    fn is_empty(&self) -> bool {
+        self.sources.is_empty()
+    }
+}
+
+pub struct SpotifyImport {
+    pub id: String,
+    pub name: String,
+    pub cover_url: Option<String>,
+    pub tracks: Vec<Track>,
+    pub track_ids: Vec<String>,
+    pub unavailable_count: usize,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

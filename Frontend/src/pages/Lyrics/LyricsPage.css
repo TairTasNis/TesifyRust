@@ -1,4 +1,5 @@
 .lyrics-page { position: absolute; z-index: 5; inset: 0; overflow: hidden; background: #23383f; color: #f8f9f7; isolation: isolate; font-family: "Manrope", "Segoe UI", sans-serif; transition: opacity var(--motion-modal) var(--ease-out), transform var(--motion-modal) var(--ease-out), filter var(--motion-modal) var(--ease-out); }
+.lyrics-page:not(:has(.lyrics-background)) { background: #121212; }
 .lyrics-page[data-closing] { opacity: 0; filter: blur(3px); transition-duration: 180ms; pointer-events: none; }
 @starting-style { .lyrics-page { opacity: 0; filter: blur(3px); } }
 @media (prefers-reduced-motion: no-preference) { @starting-style { html:not([data-input="keyboard"]) .lyrics-page { transform: translateY(10px) scale(.99); } } html:not([data-input="keyboard"]) .lyrics-page[data-closing] { transform: translateY(10px) scale(.99); } }

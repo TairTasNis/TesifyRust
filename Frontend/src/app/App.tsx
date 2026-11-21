@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import AboutPage from '../pages/About/AboutPage'
+import DownloadsPage from '../pages/Downloads/DownloadsPage'
 import HomePage from '../pages/Home/HomePage'
 import LibraryPage from '../pages/Library/LibraryPage'
 import LyricsPage from '../pages/Lyrics/LyricsPage'
@@ -157,7 +158,7 @@ function AppContent() {
     navigate(kind === 'playlist' ? 'spotify-playlist' : kind, id)
   }
   const leaveCatalog = () => { if (catalogEnteredFromApp.current) window.history.back(); else navigate('search') }
-  const sidebarPage = activePage === 'playlist' ? 'library' : ['artist', 'album', 'spotify-playlist'].includes(activePage) ? 'search' : activePage
+  const sidebarPage = activePage === 'playlist' || activePage === 'downloads' ? 'library' : ['artist', 'album', 'spotify-playlist'].includes(activePage) ? 'search' : activePage
   const playerExpanded = mobile && playerOpen
   const lyricsPresent = lyricsOpen || (playerExpanded && keepLyrics)
   const overlayOpen = lyricsOpen || playerExpanded
@@ -169,7 +170,8 @@ function AppContent() {
     {activePage === 'artist' && <ArtistPage key={route.playlistId} id={route.playlistId ?? ''} onOpen={openCatalog} onBack={leaveCatalog} />}
     {activePage === 'album' && <AlbumPage key={route.playlistId} id={route.playlistId ?? ''} onOpen={openCatalog} onBack={leaveCatalog} />}
     {activePage === 'spotify-playlist' && <SpotifyPlaylistPage key={route.playlistId} id={route.playlistId ?? ''} onOpen={openCatalog} onBack={leaveCatalog} />}
-    {activePage === 'library' && <LibraryPage onOpenPlaylist={(id) => navigate('playlist', id)} onOpenCatalog={openCatalog} />}
+    {activePage === 'library' && <LibraryPage onOpenPlaylist={(id) => navigate('playlist', id)} onOpenCatalog={openCatalog} onOpenDownloads={() => navigate('downloads')} />}
+    {activePage === 'downloads' && <DownloadsPage onBack={() => navigate('library')} />}
     {activePage === 'playlist' && <PlaylistPage key={route.playlistId} playlistId={route.playlistId ?? ''} onBack={() => navigate('library')} onOpen={openCatalog} />}
   </>
 
