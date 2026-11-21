@@ -3,6 +3,7 @@ use super::{
     playback::{PlaybackService, play_engine::PlayEngine},
     playlists::store::LibraryStore,
     spotify::SpotifyClient,
+    wave::WaveService,
 };
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
@@ -15,6 +16,7 @@ pub struct AppServices {
     pub playback: Arc<PlaybackService>,
     pub spotify: Arc<SpotifyClient>,
     pub lyrics: Arc<crate::pages::lyrics::service::LyricsService>,
+    pub wave: Arc<WaveService>,
 }
 
 impl AppServices {
@@ -40,12 +42,14 @@ impl AppServices {
             #[cfg(target_os = "android")]
             tools,
         )?;
+        let library = Arc::new(LibraryStore::new(config.data_dir.clone())?);
         Ok(Self {
+            wave: WaveService::new(http.clone(), config.lastfm_api_key, &config.data_dir, &library),
             lyrics: crate::pages::lyrics::service::LyricsService::with_cache(
                 http.clone(), config.lyrics, config.data_dir.join("lyrics-v1"),
             ),
             spotify: Arc::new(SpotifyClient::new(http.clone())),
-            library: Arc::new(LibraryStore::new(config.data_dir.clone())?),
+            library,
             data_dir: config.data_dir,
             http,
             imgbb_api_key: config.imgbb_api_key.map(Arc::from),

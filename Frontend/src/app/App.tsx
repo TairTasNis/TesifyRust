@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import AboutPage from '../pages/About/AboutPage'
 import DownloadsPage from '../pages/Downloads/DownloadsPage'
 import HomePage from '../pages/Home/HomePage'
+import WavePage from '../pages/Wave/WavePage'
 import LibraryPage from '../pages/Library/LibraryPage'
 import LyricsPage from '../pages/Lyrics/LyricsPage'
 import { getLyrics } from '../pages/Lyrics/api'
@@ -31,7 +32,7 @@ import { useMobileDockScroll } from './useMobileDockScroll'
 import './RouteTransition.css'
 
 const routeParents: Partial<Record<PageId, PageId>> = {
-  about: 'home', playlist: 'library', downloads: 'library', artist: 'search', album: 'search', 'spotify-playlist': 'search',
+  about: 'home', wave: 'home', playlist: 'library', downloads: 'library', artist: 'search', album: 'search', 'spotify-playlist': 'search',
 }
 
 export default function App() {
@@ -216,7 +217,7 @@ function AppContent() {
   const openCatalog: OpenCatalog = (kind, id) => {
     navigate(kind === 'playlist' ? 'spotify-playlist' : kind, id)
   }
-  const sidebarPage = activePage === 'playlist' || activePage === 'downloads' ? 'library' : ['artist', 'album', 'spotify-playlist'].includes(activePage) ? 'search' : activePage
+  const sidebarPage = routeParents[activePage] ?? activePage
   const playerExpanded = mobile && playerOpen
   const lyricsPresent = lyricsOpen || (playerExpanded && keepLyrics)
   const overlayOpen = lyricsOpen || playerExpanded
@@ -226,7 +227,8 @@ function AppContent() {
     const trackQuery = mobile ? (playlistSearch.route === routeKey(item) ? playlistSearch.query : '') : undefined
     switch (page) {
       case 'about': return <AboutPage onBack={() => leavePage()} />
-      case 'home': return <HomePage />
+      case 'home': return <HomePage onOpenWave={() => navigate('wave')} />
+      case 'wave': return <WavePage onBack={() => leavePage()} onOpen={openCatalog} />
       case 'settings': return <SettingsPage onAbout={mobile ? () => navigate('about') : undefined} />
       case 'search': return <SearchPage onOpen={openCatalog} mobileSearch={mobile ? { query: mobileQuery, submitCount: mobileSubmitCount } : undefined} />
       case 'artist': return <ArtistPage id={id} onOpen={openCatalog} onBack={() => leavePage()} />
@@ -251,7 +253,7 @@ function AppContent() {
           onOpenSearch={() => { if (!inPlaylist) navigate('search', undefined, false); setSearchOpen(true) }} onCloseSearch={closeSearch}
           onQuery={value => inPlaylist ? setPlaylistSearch({ route: activeRoute, query: value }) : setMobileQuery(value)}
           onSubmit={() => { if (!inPlaylist) setMobileSubmitCount(count => count + 1) }}
-          onNavigate={page => navigate(page, undefined, false)} /> : <Sidebar activePage={sidebarPage} onNavigate={navigate} />)}
+          onNavigate={page => navigate(page, undefined, false)} /> : <Sidebar activePage={sidebarPage} onNavigate={page => navigate(page, undefined, page === 'about')} />)}
       </div>
       {mobile && player.current && <NowPlayingPage shown={playerExpanded} active={playerExpanded && !lyricsOpen} onClose={closePlayer}
         onLyrics={openLyrics} onOpen={openCatalog} />}

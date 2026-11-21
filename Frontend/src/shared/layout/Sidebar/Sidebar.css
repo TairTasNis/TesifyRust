@@ -36,7 +36,6 @@
 .navigation {
   --navigation-size: 48px;
   --navigation-gap: 8px;
-  --navigation-step: calc(var(--navigation-size) + var(--navigation-gap));
   position: relative;
   display: flex;
   flex-direction: column;
@@ -44,10 +43,6 @@
   margin-top: 22px;
   isolation: isolate;
 }
-
-.navigation-selection { position: absolute; z-index: 1; inset: 0; display: flex; flex-direction: column; gap: var(--navigation-gap); background: var(--nav-active); color: var(--nav-active-ink); pointer-events: none; transition: clip-path var(--motion-base) var(--ease-out); }
-.navigation-selection > span { display: grid; width: var(--navigation-size); height: var(--navigation-size); flex: 0 0 auto; place-items: center; }
-@media(prefers-reduced-motion: reduce) { .navigation-selection { transition: none; } }
 
 .navigation-button {
   position: relative;
@@ -70,11 +65,11 @@
 .navigation-button:focus-visible {
   outline-color: var(--ink);
 }
+.navigation-button[aria-current="page"] { background: var(--nav-active); color: var(--nav-active-ink); }
 .navigation-icon { display: grid; place-items: center; }
 .navigation-label { display: none; }
 
 .settings-button { --navigation-size: 48px; flex: 0 0 auto; margin: auto 0 13px; }
-.settings-button[aria-current="page"] { background: var(--nav-active); color: var(--nav-active-ink); }
 @media (hover: hover) and (pointer: fine) { .settings-button:not([aria-current]):hover { background: var(--surface); } }
 @media (max-height: 400px) {
   .sidebar { padding-top: 6px; }

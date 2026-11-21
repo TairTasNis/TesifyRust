@@ -3,6 +3,7 @@ import { lyricsModes, setPreferences, usePreferences } from '../../shared/prefer
 import type { Language, LyricsMode } from '../../shared/preferences/preferences'
 import { useTranslation } from '../../shared/preferences/i18n'
 import StorageSettings from './StorageSettings'
+import DeveloperSettings from './DeveloperSettings'
 import './SettingsPage.css'
 
 const languages = { ru: 'Русский', en: 'English', kk: 'Қазақша' }
@@ -16,15 +17,18 @@ export default function SettingsPage({ onAbout }: { onAbout?: () => void }) {
   const { language, theme, accentEnabled, accentColor, lyricsMode, lyricsBackground } = usePreferences()
   const t = useTranslation()
   const [title, general, languageLabel, themeLabel] = labels[language]
-  const [section, setSection] = useState<'general' | 'storage'>('general')
+  const [section, setSection] = useState<'general' | 'storage' | 'developer'>('general')
 
   return <main className="workspace settings-page" aria-label={title}>
     <h1>{title}</h1>
     <div className="settings-tabs" role="group" aria-label={title}>
       <button type="button" aria-pressed={section === 'general'} onClick={() => setSection('general')}>{general}</button>
       <button type="button" aria-pressed={section === 'storage'} onClick={() => setSection('storage')}>{t('Память')}</button>
+      <button type="button" aria-pressed={section === 'developer'} onClick={() => setSection('developer')}>{t('Для разработчиков')}</button>
     </div>
-    {section === 'storage' ? <StorageSettings /> : <section id="settings-general" className="settings-panel" aria-label={general}>
+    {section === 'storage' && <StorageSettings />}
+    {section === 'developer' && <DeveloperSettings />}
+    {section === 'general' && <section id="settings-general" className="settings-panel" aria-label={general}>
       <label className="settings-row">
         <span>{languageLabel}</span>
         <select value={language} onChange={event => setPreferences({ language: event.currentTarget.value as Language })}>

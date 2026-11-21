@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { backend, errorMessage } from '../../lib/backend'
+import { getWaveProfile } from '../../playback/wave'
 import type { LibraryIndex, SavedCollection } from '../types'
 import TrackPlaylistDialog from './TrackPlaylistDialog'
 
@@ -45,6 +46,12 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     window.addEventListener('focus', load)
     return () => { active = false; ++request.current; window.removeEventListener('focus', load) }
   }, [refresh])
+
+  useEffect(() => {
+    if (index?.playlists.length || index?.collections.some(collection => collection.kind === 'playlist')) {
+      void getWaveProfile().catch(() => {})
+    }
+  }, [index])
 
   const editLibrary = useCallback((operation: () => Promise<LibraryIndex>) => {
     const write = pending.current.then(async () => {

@@ -1,0 +1,57 @@
+.home-page {
+  overflow: auto;
+  padding: 6px 8px 24px;
+}
+
+.wave-banner {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  width: 100%;
+  min-height: clamp(166px, 23vw, 242px);
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  overflow: hidden;
+  padding: clamp(18px, 4.2vw, 48px);
+  border: 0;
+  border-radius: 23px;
+  background: linear-gradient(108deg, #102533 15%, #164248 100%);
+  color: #f2fbf8;
+  text-align: start;
+  font-family: "Manrope", "Segoe UI", sans-serif;
+}
+
+.wave-banner::before {
+  position: absolute;
+  z-index: -1;
+  inset: -45% -12% -32% 31%;
+  background: repeating-radial-gradient(ellipse at 95% 75%, transparent 0 14px, #a5ebe23b 15px 16px, transparent 17px 25px);
+  mask-image: linear-gradient(100deg, transparent 5%, #000 67%);
+  transform: rotate(-14deg);
+  content: "";
+}
+
+.wave-banner-copy { display: grid; min-width: 0; flex: 1; gap: 6px; padding: 0; border: 0; background: transparent; text-align: start; cursor: pointer; }
+.wave-banner-copy::after { position: absolute; inset: 0; content: ""; }
+.wave-banner-title { font-size: clamp(27px, 5vw, 60px); font-weight: 800; line-height: 1.12; letter-spacing: -.058em; }
+.wave-banner-caption { overflow: hidden; color: #c9e6de; font-size: clamp(13px, 1.6vw, 16px); text-overflow: ellipsis; white-space: nowrap; }
+.wave-banner-control {
+  position: relative;
+  display: grid;
+  width: clamp(48px, 7vw, 68px);
+  aspect-ratio: 1;
+  flex: none;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #d9f7ec;
+  color: #132e34;
+  cursor: pointer;
+}
+.wave-banner-control svg { width: 26px; height: 26px; }
+.wave-banner button:focus-visible { outline-color: #fff; }
+.wave-banner-error { margin-top: 12px; }
+@media (hover: hover) { .wave-banner-control:hover { background: #fff; } }
+.desktop--mobile .home-page { padding: 18px var(--mobile-gutter) 24px; }

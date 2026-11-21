@@ -1,6 +1,6 @@
 use crate::{
     pages::{library::covers, playlist::commands::{import_spotify, sync_linked_playlists}},
-    shared::{playlists::models::*, services::AppServices},
+    shared::{playlists::models::*, services::AppServices, wave::{Feedback, Options, Profile, WaveService}},
 };
 use axum::{
     Json, Router,
@@ -39,6 +39,10 @@ pub fn router(services: AppServices) -> Router {
         .route("/spotify/playlists/{id}", get(spotify_playlist))
         .route("/playback/resolve", post(prepare_track))
         .route("/playback/prefetch", post(prefetch_track))
+        .route("/wave/profile", get(wave_profile))
+        .route("/wave/key", post(wave_key))
+        .route("/wave/tracks", post(wave_tracks))
+        .route("/wave/feedback", post(wave_feedback))
         .route("/lyrics", post(track_lyrics))
         .layer(DefaultBodyLimit::max(12 * 1024 * 1024))
         .layer(middleware::from_fn(loopback_only))
@@ -78,6 +82,41 @@ async fn storage_usage(State(services): State<AppServices>) -> ApiResult<crate::
 }
 async fn clear_song_previews(State(services): State<AppServices>) -> ApiResult<crate::pages::settings::commands::StorageUsage> {
     crate::pages::settings::commands::storage_usage(&services, true).await.map(Json).map_err(error)
+}
+
+async fn wave_profile(State(services): State<AppServices>) -> ApiResult<Profile> {
+    WaveService::profile(&services).await.map(Json).map_err(error)
+}
+
+#[derive(Deserialize)]
+struct WaveKey {
+    key: String,
+}
+
+async fn wave_key(State(services): State<AppServices>, Json(input): Json<WaveKey>) -> ApiResult<()> {
+    services.wave.set_api_key(input.key).await.map(Json).map_err(error)
+}
+
+#[derive(Deserialize)]
+struct WaveTracks {
+    recent: Vec<String>,
+    #[serde(default)]
+    options: Options,
+}
+
+async fn wave_tracks(State(services): State<AppServices>, Json(input): Json<WaveTracks>) -> ApiResult<Vec<Track>> {
+    WaveService::recommend(&services, input.recent, input.options).await.map(Json).map_err(error)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WaveFeedback {
+    track_id: String,
+    feedback: Feedback,
+}
+
+async fn wave_feedback(State(services): State<AppServices>, Json(input): Json<WaveFeedback>) -> ApiResult<()> {
+    WaveService::feedback(&services, &input.track_id, input.feedback).await.map(Json).map_err(error)
 }
 async fn create(
     State(services): State<AppServices>,

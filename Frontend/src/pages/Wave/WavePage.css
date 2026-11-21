@@ -1,0 +1,33 @@
+.wave-page {
+  overflow: auto;
+  padding: 0 12px 28px;
+  font-family: "Manrope", "Segoe UI", sans-serif;
+}
+.desktop--mobile .wave-page { padding: 18px var(--mobile-gutter) 24px; }
+.wave-heading { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; }
+.wave-heading h1 { flex: 1; margin: 0; font-size: clamp(26px, 4.6vw, 48px); line-height: 1.1; letter-spacing: -.05em; }
+.wave-back { display: grid; flex: none; width: 38px; height: 38px; place-items: center; padding: 0; border: 0; border-radius: 50%; background: var(--surface); cursor: pointer; }
+.wave-back svg, .wave-heading .music-button svg { width: 20px; height: 20px; }
+.wave-heading .music-button { border-radius: 999px; }
+.wave-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding-block: 12px; border-block: 1px solid var(--line); }
+.wave-modes { display: flex; flex-wrap: wrap; gap: 3px; padding: 3px; background: var(--surface); border-radius: 20px; }
+.wave-modes button { min-height: 34px; padding: 5px 12px; border: 0; border-radius: 17px; background: transparent; font-size: 13px; font-weight: 700; cursor: pointer; }
+.wave-modes button[aria-pressed="true"] { background: #164248; color: #f2fbf8; }
+.wave-mood { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; }
+.wave-mood select { padding: 7px 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--canvas); color: var(--ink); font: inherit; }
+.wave-list-heading { display: flex; min-height: 54px; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0; }
+.wave-list-heading h2 { margin: 0; font-size: 18px; letter-spacing: -.02em; }
+.wave-list-heading .music-button { padding-inline: 8px; }
+.wave-track-list { margin: 0; padding: 0; list-style: none; }
+.wave-track-list li { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto auto; align-items: center; gap: 12px; padding: 7px 8px; border-radius: 12px; }
+.wave-track-list li[aria-current] { background: var(--accent-soft); }
+.wave-track-play { position: relative; width: 44px; height: 44px; padding: 0; overflow: hidden; border: 0; border-radius: 7px; background: var(--surface); cursor: pointer; }
+.wave-track-play > svg { position: absolute; right: 3px; bottom: 3px; width: 19px; height: 19px; padding: 1px; border-radius: 50%; background: #132e34; color: #fff; }
+.wave-track-info > button { display: block; max-width: 100%; overflow: hidden; padding: 0; border: 0; background: transparent; font-size: 14px; font-weight: 750; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.wave-track-info .catalog-artist-links { display: block; overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.wave-track-time { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+@media (max-width: 480px) {
+  .wave-heading { gap: 8px; }
+  .wave-heading .music-button { gap: 3px; padding-inline: 8px; }
+  .wave-track-list li { gap: 7px; padding-inline: 4px; }
+}

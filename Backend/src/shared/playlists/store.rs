@@ -121,6 +121,18 @@ impl LibraryStore {
         Ok(self.read()?.into_index())
     }
 
+    pub fn wave_library(&self) -> Result<(Vec<Track>, Vec<String>), String> {
+        let _lock = self.lock()?;
+        let data = self.read()?;
+        let linked: HashSet<_> = data.playlists.iter()
+            .flat_map(|playlist| playlist.spotify_sync.sources.keys()).collect();
+        let saved = data.collections.into_iter()
+            .filter(|item| item.kind == super::models::CollectionKind::Playlist && !linked.contains(&item.id))
+            .map(|item| item.id).collect();
+        let tracks = data.playlists.into_iter().flat_map(|playlist| playlist.tracks).collect();
+        Ok((tracks, saved))
+    }
+
     pub fn edit_memberships(
         &self,
         edit: BulkMembershipEdit,
@@ -425,12 +437,12 @@ fn remove_detached_tracks(playlist: &mut Playlist, previous: &[String]) {
 }
 
 #[cfg(not(target_os = "android"))]
-fn lock_file(file: &File) -> std::io::Result<()> {
+pub(crate) fn lock_file(file: &File) -> std::io::Result<()> {
     file.lock()
 }
 
 #[cfg(target_os = "android")]
-fn lock_file(file: &File) -> std::io::Result<()> {
+pub(crate) fn lock_file(file: &File) -> std::io::Result<()> {
     use std::os::fd::AsRawFd;
     // Rust's File::lock is unsupported on Android. The kernel still supports flock.
     loop {

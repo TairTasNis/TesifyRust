@@ -46,7 +46,11 @@ pub fn run() {
             pages::album::commands::get_spotify_album,
             pages::spotify_playlist::commands::get_spotify_playlist,
             shared::playback::commands::prepare_track,
-            shared::playback::commands::prefetch_track
+            shared::playback::commands::prefetch_track,
+            shared::wave::commands::get_wave_profile,
+            shared::wave::commands::set_wave_api_key,
+            shared::wave::commands::get_wave_tracks,
+            shared::wave::commands::save_wave_feedback,
         ])
         .run(tauri::generate_context!())
         .expect("Не удалось запустить Tesify");

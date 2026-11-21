@@ -46,10 +46,14 @@ pub async fn edit_bulk_memberships(
             .collect()
     };
     let library = services.library.clone();
-    let (index, tracks) =
-        tauri::async_runtime::spawn_blocking(move || library.edit_memberships(edit, sources))
-            .await
-            .map_err(|_| "Не удалось сохранить библиотеку. Повторите попытку.")??;
+    let wave = services.wave.clone();
+    let (index, tracks) = tauri::async_runtime::spawn_blocking(move || {
+        let (index, tracks) = library.edit_memberships(edit, sources)?;
+        for track in &tracks {
+            if index.memberships.contains_key(&track.spotify_id) { wave.remember_saved_tags(track); }
+        }
+        Ok::<_, String>((index, tracks))
+    }).await.map_err(|_| "Не удалось сохранить библиотеку. Повторите попытку.")??;
     for track in tracks {
         services.spotify.remember_library_track(track);
     }

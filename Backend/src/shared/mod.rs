@@ -3,3 +3,4 @@ pub mod playback;
 pub mod playlists;
 pub mod services;
 pub mod spotify;
+pub mod wave;

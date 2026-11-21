@@ -18,7 +18,6 @@ type SidebarProps = {
 
 export default function Sidebar({ activePage, onNavigate }: SidebarProps) {
   const t = useTranslation()
-  const selectedIndex = navigation.findIndex(({ id }) => id === activePage)
   return (
     <aside className="sidebar" aria-label={t("Боковая панель")}>
       <button
@@ -30,9 +29,6 @@ export default function Sidebar({ activePage, onNavigate }: SidebarProps) {
       </button>
 
       <nav className="navigation" aria-label={t("Основная навигация")}>
-        {selectedIndex >= 0 && <div className="navigation-selection" aria-hidden="true" style={{ clipPath: `inset(calc(${selectedIndex} * var(--navigation-step)) 0 calc(${navigation.length - selectedIndex - 1} * var(--navigation-step)) round 13px)` }}>
-          {navigation.map(({ id, icon }) => <span key={id}><Icon name={icon} /></span>)}
-        </div>}
         {navigation.map(({ id, label, icon }) => (
           <button
             key={id}

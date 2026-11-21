@@ -2,6 +2,7 @@ use std::{collections::HashMap, path::PathBuf};
 
 pub struct Config {
     pub imgbb_api_key: Option<String>,
+    pub lastfm_api_key: Option<String>,
     pub data_dir: PathBuf,
     pub yt_dlp_path: Option<PathBuf>,
     pub yt_dlp_js_runtime: Option<String>,
@@ -50,6 +51,7 @@ impl Config {
             .ok_or_else(|| "Не удалось найти папку данных приложения.".to_string())?;
         Ok(Self {
             imgbb_api_key: setting("IMGBB_API_KEY").filter(|key| !key.trim().is_empty()),
+            lastfm_api_key: setting("LASTFM_API_KEY").filter(|key| !key.trim().is_empty()),
             data_dir,
             yt_dlp_path: setting("YT_DLP_PATH")
                 .filter(|path| !path.trim().is_empty())
