@@ -1,40 +1,22 @@
 import { useTranslation } from '../../shared/preferences/i18n'
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { errorMessage } from '../../shared/lib/backend'
+import { useState } from 'react'
+import type { OpenCatalog } from '../../shared/catalog/types'
+import { useLibrary } from '../../shared/playlists/Membership/LibraryProvider'
 import PlaylistEditor from '../../shared/playlists/PlaylistEditor/PlaylistEditor'
 import { trackCount } from '../../shared/playlists/format'
-import type { PlaylistSummary } from '../../shared/playlists/types'
 import Button from '../../shared/ui/Button/Button'
 import Icon from '../../shared/ui/Icon/Icon'
 import MusicLoader from '../../shared/ui/MusicLoader/MusicLoader'
 import PlaylistCover from '../../shared/ui/PlaylistCover/PlaylistCover'
-import { createPlaylist, listPlaylists } from './api'
+import { createPlaylist } from './api'
 import './LibraryPage.css'
 
-type Props = { onOpenPlaylist: (id: string) => void }
+type Props = { onOpenPlaylist: (id: string) => void; onOpenCatalog: OpenCatalog }
 
-export default function LibraryPage({ onOpenPlaylist }: Props) {
+export default function LibraryPage({ onOpenPlaylist, onOpenCatalog }: Props) {
   const t = useTranslation()
-  const [playlists, setPlaylists] = useState<PlaylistSummary[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const { index, error, refresh } = useLibrary()
   const [editing, setEditing] = useState(false)
-  const request = useRef(0)
-
-  const load = useCallback(async () => {
-    const current = ++request.current
-    setLoading(true); setError(null)
-    try { const result = await listPlaylists(); if (current === request.current) setPlaylists(result) }
-    catch (error) { if (current === request.current) setError(errorMessage(error)) }
-    finally { if (current === request.current) setLoading(false) }
-  }, [])
-
-  useEffect(() => {
-    void load()
-    const refresh = () => { void load() }
-    window.addEventListener('focus', refresh)
-    return () => { ++request.current; window.removeEventListener('focus', refresh) }
-  }, [load])
 
   return (
     <main className="workspace library-page" aria-label={t("Библиотека")}>
@@ -43,13 +25,20 @@ export default function LibraryPage({ onOpenPlaylist }: Props) {
         <Button className="library-create" onClick={() => setEditing(true)}><Icon name="plus" />{t("Создать плейлист")}</Button>
       </header>
 
-      {error ? <div className="library-message" role="alert"><Icon name="library" /><h2>{t("Библиотека недоступна")}</h2><p>{error && t(error)}</p><Button variant="secondary" onClick={() => { void load() }}>{t("Попробовать снова")}</Button></div>
-        : loading && playlists.length === 0 ? <MusicLoader label={t("Загружаем библиотеку")} />
-        : playlists.length > 0 && <div className="library-grid">{playlists.map((playlist) => <button key={playlist.id} className="playlist-card" onClick={() => onOpenPlaylist(playlist.id)} aria-label={t("Открыть плейлист {0}", playlist.name)}>
+      {error && <div className="library-message" role="alert"><Icon name="library" /><h2>{t("Библиотека недоступна")}</h2><p>{t(error)}</p><Button variant="secondary" onClick={() => { void refresh() }}>{t("Попробовать снова")}</Button></div>}
+      {!index && !error && <MusicLoader label={t("Загружаем библиотеку")} />}
+      {!!index?.playlists.length && <div className="library-grid">{index.playlists.map((playlist) => <button key={playlist.id} className="playlist-card" onClick={() => onOpenPlaylist(playlist.id)} aria-label={t("Открыть плейлист {0}", playlist.name)}>
           <PlaylistCover url={playlist.coverUrl} name={playlist.name} /><h3>{playlist.name}</h3><p>{trackCount(playlist.trackCount)}</p>{playlist.description && <span className="playlist-card-description">{playlist.description}</span>}
         </button>)}</div>}
+      {!!index?.collections.length && <section className="library-saved">
+        <h2>{t('Сохранённые альбомы и плейлисты')}</h2>
+        <div className="library-grid">{index.collections.map(item => <button key={`${item.kind}:${item.id}`} className="playlist-card" onClick={() => onOpenCatalog(item.kind, item.id)}>
+          <PlaylistCover url={item.coverUrl} name="" /><h3>{item.name}</h3>
+          <p>{t(item.kind === 'album' ? 'Альбом Spotify' : 'Плейлист Spotify')}{item.owner && ` · ${item.owner}`}</p>
+        </button>)}</div>
+      </section>}
 
-      {editing && <PlaylistEditor onClose={() => setEditing(false)} onSave={async (draft) => { const playlist = await createPlaylist(draft); setEditing(false); onOpenPlaylist(playlist.id) }} />}
+      {editing && <PlaylistEditor onClose={() => setEditing(false)} onSave={async (draft) => { const playlist = await createPlaylist(draft); void refresh(); setEditing(false); onOpenPlaylist(playlist.id) }} />}
     </main>
   )
 }

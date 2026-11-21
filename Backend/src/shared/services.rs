@@ -4,11 +4,12 @@ use super::{
     playlists::store::LibraryStore,
     spotify::SpotifyClient,
 };
-use std::{sync::Arc, time::Duration};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
 #[derive(Clone)]
 pub struct AppServices {
     pub library: Arc<LibraryStore>,
+    pub data_dir: PathBuf,
     pub http: reqwest::Client,
     pub imgbb_api_key: Option<Arc<str>>,
     pub playback: Arc<PlaybackService>,
@@ -44,7 +45,8 @@ impl AppServices {
                 http.clone(), config.lyrics, config.data_dir.join("lyrics-v1"),
             ),
             spotify: Arc::new(SpotifyClient::new(http.clone())),
-            library: Arc::new(LibraryStore::new(config.data_dir)?),
+            library: Arc::new(LibraryStore::new(config.data_dir.clone())?),
+            data_dir: config.data_dir,
             http,
             imgbb_api_key: config.imgbb_api_key.map(Arc::from),
             playback,

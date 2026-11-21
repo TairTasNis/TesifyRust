@@ -5,6 +5,7 @@ import type { CSSProperties } from 'react'
 import TrackArtistLinks from '../../catalog/ArtistLinks/TrackArtistLinks'
 import type { OpenCatalog } from '../../catalog/types'
 import { formatDuration } from '../../playlists/format'
+import TrackPlaylistButton from '../../playlists/Membership/TrackPlaylistButton'
 import Icon from '../../ui/Icon/Icon'
 import MusicLoader from '../../ui/MusicLoader/MusicLoader'
 import PlaylistCover from '../../ui/PlaylistCover/PlaylistCover'
@@ -99,7 +100,7 @@ export default function MiniPlayer({ lyricsOpen, onToggleLyrics, onOpen }: { lyr
       onPointerCancel={() => { pointer.current = null; setScrub(null) }} />
     <div className="mini-player-content">
       <button className="player-button mini-player-lyrics" aria-label={lyricsOpen ? t("Скрыть текст песни") : t("Показать текст песни")} title={t("Текст песни")} aria-pressed={lyricsOpen} aria-controls="track-lyrics" onClick={onToggleLyrics}><Icon name="lyrics" /></button>
-      <div className="mini-player-track" key={track.id}><PlaylistCover url={track.coverUrl} name={t("Обложка: {0}", track.title)} /><div className="mini-player-info"><strong>{track.title}</strong><TrackArtistLinks track={track} onOpen={onOpen} /></div></div>
+      <div className="mini-player-track" key={track.id}><TrackPlaylistButton spotifyId={track.spotifyId} title={track.title} /><PlaylistCover url={track.coverUrl} name={t("Обложка: {0}", track.title)} /><div className="mini-player-info"><strong>{track.title}</strong><TrackArtistLinks track={track} onOpen={onOpen} /></div></div>
       <div className="mini-player-transport"><div className="mini-player-controls">
         <button className="player-button" aria-label={t("Предыдущий трек")} onClick={player.previous}><Icon name="previous" /></button>
         <button className="player-button player-button-main" aria-label={player.playing ? t("Пауза") : t("Продолжить")} onClick={player.toggle} aria-busy={player.loading}><span className="player-glyph" key={player.playing ? 'pause' : 'play'}><Icon name={player.playing ? 'pause' : 'play'} /></span></button>

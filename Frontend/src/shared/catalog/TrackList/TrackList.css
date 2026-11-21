@@ -13,6 +13,7 @@
 .catalog-track-title .catalog-artist-links { display: block; margin-top: 3px; font-size: 10px; }
 .catalog-track-list .catalog-track-time { width: 64px; padding-right: 8px; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .catalog-track-time svg { width: 14px; height: 14px; vertical-align: middle; }
+.catalog-track-list .catalog-track-save { width: 48px; padding-inline: 0; text-align: center; }
 .catalog-track-album { width: 27%; }
 .catalog-track-plays { width: 20%; font-variant-numeric: tabular-nums; }
 .catalog-track-added { width: 140px; }

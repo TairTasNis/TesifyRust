@@ -1,8 +1,11 @@
-use super::models::{ImportResult, Playlist, PlaylistDraft, PlaylistSummary, Track};
+use super::models::{
+    CollectionEdit, ImportResult, LibraryIndex, Playlist, PlaylistDraft, PlaylistSummary,
+    SavedCollection, Track, TrackMembershipEdit,
+};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fs::{self, File, OpenOptions},
     io::Write,
     path::PathBuf,
@@ -14,6 +17,34 @@ use uuid::Uuid;
 struct LibraryData {
     schema_version: u32,
     playlists: Vec<Playlist>,
+    #[serde(default)]
+    collections: Vec<SavedCollection>,
+}
+
+impl LibraryData {
+    fn summaries(&self) -> Vec<PlaylistSummary> {
+        let mut playlists: Vec<_> = self.playlists.iter().map(PlaylistSummary::from).collect();
+        playlists.sort_by_key(|playlist| std::cmp::Reverse(playlist.updated_at));
+        playlists
+    }
+
+    fn into_index(self) -> LibraryIndex {
+        let playlists = self.summaries();
+        let mut memberships: HashMap<String, Vec<String>> = HashMap::new();
+        for playlist in self.playlists {
+            for track in playlist.tracks {
+                let owners = memberships.entry(track.spotify_id).or_default();
+                if owners.last() != Some(&playlist.id) {
+                    owners.push(playlist.id.clone());
+                }
+            }
+        }
+        LibraryIndex {
+            playlists,
+            collections: self.collections,
+            memberships,
+        }
+    }
 }
 
 pub struct LibraryStore {
@@ -35,8 +66,7 @@ impl LibraryStore {
             .write(true)
             .open(self.directory.join("library.lock"))
             .map_err(|_| "Не удалось открыть библиотеку.".to_string())?;
-        lock_file(&file)
-            .map_err(|_| "Библиотека занята. Попробуйте ещё раз.".to_string())?;
+        lock_file(&file).map_err(|_| "Библиотека занята. Попробуйте ещё раз.".to_string())?;
         Ok(file)
     }
 
@@ -46,6 +76,7 @@ impl LibraryStore {
             return Ok(LibraryData {
                 schema_version: 1,
                 playlists: Vec::new(),
+                collections: Vec::new(),
             });
         }
         let data: LibraryData = serde_json::from_reader(
@@ -82,10 +113,92 @@ impl LibraryStore {
 
     pub fn list(&self) -> Result<Vec<PlaylistSummary>, String> {
         let _lock = self.lock()?;
-        let data = self.read()?;
-        let mut playlists: Vec<_> = data.playlists.iter().map(PlaylistSummary::from).collect();
-        playlists.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
-        Ok(playlists)
+        Ok(self.read()?.summaries())
+    }
+
+    pub fn index(&self) -> Result<LibraryIndex, String> {
+        let _lock = self.lock()?;
+        Ok(self.read()?.into_index())
+    }
+
+    pub fn edit_memberships(
+        &self,
+        edit: TrackMembershipEdit,
+        catalog_track: Option<Track>,
+    ) -> Result<(LibraryIndex, Option<Track>), String> {
+        let _lock = self.lock()?;
+        let mut data = self.read()?;
+        let add: HashSet<_> = edit.add.into_iter().collect();
+        let remove: HashSet<_> = edit.remove.into_iter().collect();
+        if add
+            .iter()
+            .any(|id| !data.playlists.iter().any(|playlist| &playlist.id == id))
+        {
+            return Err("Плейлист не найден.".into());
+        }
+        let source = data
+            .playlists
+            .iter()
+            .flat_map(|playlist| &playlist.tracks)
+            .find(|track| track.spotify_id == edit.spotify_id)
+            .cloned()
+            .or(catalog_track);
+        let now = Utc::now().timestamp_millis();
+        let mut changed = false;
+        for playlist in &mut data.playlists {
+            let before = playlist.tracks.len();
+            if add.contains(&playlist.id) {
+                if !playlist
+                    .tracks
+                    .iter()
+                    .any(|track| track.spotify_id == edit.spotify_id)
+                {
+                    let mut track = source
+                        .clone()
+                        .ok_or("Обновите страницу каталога и попробуйте снова.")?;
+                    track.id = Uuid::new_v4().to_string();
+                    track.added_at = now;
+                    track.source_added_at = None;
+                    playlist.tracks.push(track);
+                }
+            } else if remove.contains(&playlist.id) {
+                playlist
+                    .tracks
+                    .retain(|track| track.spotify_id != edit.spotify_id);
+            }
+            if playlist.tracks.len() != before {
+                playlist.updated_at = now;
+                changed = true;
+            }
+        }
+        if changed {
+            self.save(&data)?;
+        }
+        Ok((data.into_index(), source))
+    }
+
+    pub fn edit_collection(
+        &self,
+        edit: CollectionEdit,
+        collection: Option<SavedCollection>,
+    ) -> Result<LibraryIndex, String> {
+        let _lock = self.lock()?;
+        let mut data = self.read()?;
+        let existing = data
+            .collections
+            .iter()
+            .position(|item| item.kind == edit.kind && item.id == edit.id);
+        match (edit.saved, existing) {
+            (true, None) => data
+                .collections
+                .insert(0, collection.ok_or("Подборка недоступна.")?),
+            (false, Some(index)) => {
+                data.collections.remove(index);
+            }
+            _ => return Ok(data.into_index()),
+        }
+        self.save(&data)?;
+        Ok(data.into_index())
     }
 
     pub fn get(&self, id: &str) -> Result<Playlist, String> {
@@ -356,6 +469,46 @@ mod tests {
             }
         });
         assert_eq!(directory.store().list().unwrap().len(), 6);
+    }
+
+    #[test]
+    fn track_membership_edits_apply_only_to_selected_playlists() {
+        let directory = TestDirectory::new();
+        let store = directory.store();
+        let first = store.create(draft("First")).unwrap();
+        let second = store.create(draft("Second")).unwrap();
+        let third = store.create(draft("Third")).unwrap();
+        let edit = |add, remove| TrackMembershipEdit {
+            spotify_id: "song".into(),
+            add,
+            remove,
+        };
+        store
+            .edit_memberships(
+                edit(vec![first.id.clone(), second.id.clone()], vec![]),
+                Some(track("song")),
+            )
+            .unwrap();
+        store
+            .edit_memberships(
+                edit(
+                    vec![third.id.clone(), second.id.clone()],
+                    vec![first.id.clone()],
+                ),
+                None,
+            )
+            .unwrap();
+
+        let index = directory.store().index().unwrap();
+        assert_eq!(
+            index.memberships["song"],
+            [second.id.clone(), third.id.clone()]
+        );
+        assert!(store.get(&first.id).unwrap().tracks.is_empty());
+        let second = store.get(&second.id).unwrap();
+        let third = store.get(&third.id).unwrap();
+        assert_eq!(second.tracks.len(), 1);
+        assert_ne!(second.tracks[0].id, third.tracks[0].id);
     }
 
     #[test]

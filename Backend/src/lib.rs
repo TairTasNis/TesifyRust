@@ -25,6 +25,11 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             pages::about::commands::get_app_info,
             pages::library::commands::list_playlists,
+            pages::library::commands::get_library_index,
+            pages::library::commands::set_track_memberships,
+            pages::library::commands::set_saved_collection,
+            pages::settings::commands::get_storage_usage,
+            pages::settings::commands::clear_song_previews,
             pages::library::commands::create_playlist,
             pages::library::commands::delete_playlist,
             pages::library::commands::upload_playlist_cover,

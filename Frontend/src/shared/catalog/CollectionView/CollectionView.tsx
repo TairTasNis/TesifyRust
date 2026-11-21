@@ -1,7 +1,10 @@
 import { useTranslation } from '../../preferences/i18n'
 import { currentLanguage } from '../../preferences/preferences'
 import type { CSSProperties } from 'react'
+import { useState } from 'react'
+import { errorMessage } from '../../lib/backend'
 import { usePlayback } from '../../playback/PlaybackProvider'
+import { useLibrary } from '../../playlists/Membership/LibraryProvider'
 import { totalDuration, trackCount } from '../../playlists/format'
 import Button from '../../ui/Button/Button'
 import Icon from '../../ui/Icon/Icon'
@@ -20,6 +23,20 @@ type Props = { data: CollectionDetail | null; loading: boolean; more: boolean; e
 export default function CollectionView({ data, loading, more, error, onRetry, onLoadMore, onBack, onOpen, kind }: Props) {
   const t = useTranslation()
   const player = usePlayback()
+  const { index, saveCollection } = useLibrary()
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const saved = index?.collections.some(item => item.kind === kind && item.id === data?.item.id) ?? false
+  const saveLabel = t(saved ? 'Убрать из библиотеки' : 'Добавить в библиотеку')
+
+  async function toggleSaved() {
+    if (!data || saving) return
+    setSaving(true)
+    setSaveError(null)
+    try { await saveCollection(kind, data.item.id, !saved) }
+    catch (error) { setSaveError(errorMessage(error)) }
+    finally { setSaving(false) }
+  }
   const queueId = `spotify:${kind}:${data?.item.id}`
   const playing = player.playlistId === queueId && player.playing
   const queue = catalogTracks(data?.tracks.items ?? [])
@@ -28,7 +45,13 @@ export default function CollectionView({ data, loading, more, error, onRetry, on
   return <main className="workspace catalog-page collection-page" aria-label={kind === 'album' ? t("Альбом Spotify") : t("Плейлист Spotify")}>
     {data ? <>
       <header className="collection-hero" style={{ '--collection-color': data.item.color ?? '#465344' } as CSSProperties}>{toolbar}<div className="collection-identity"><PlaylistCover url={data.item.imageUrl} name={data.item.name} /><div><span className="collection-kind">{t(kindLabel(data.item))}</span><h1>{data.item.name}</h1>{data.description && <p className="collection-description">{data.description}</p>}<div className="collection-meta">{kind === 'album' ? <ArtistLinks artists={data.item.artists} fallback={data.owner} onOpen={onOpen} /> : <strong>{data.owner}</strong>}{data.item.year && <span>{data.item.year}</span>}{data.followers !== null && <span>{number(data.followers)} {t("сохранений")}</span>}<span>{trackCount(data.tracks.total)}</span>{data.tracks.nextOffset === null && duration > 0 && <span>{totalDuration(duration)}</span>}</div></div></div></header>
-      <div className="catalog-body"><div className="catalog-actions"><button className="catalog-play" disabled={!queue.length} aria-label={playing ? t("Пауза альбома или плейлиста") : t("Слушать альбом или плейлист")} onClick={() => { if (player.playlistId === queueId && player.current) player.toggle(); else if (queue.length) player.playQueue(queueId, queue, 0) }}><Icon name={playing ? 'pause' : 'play'} /></button></div>
+      <div className="catalog-body"><div className="catalog-actions"><button className="catalog-play" disabled={!queue.length} aria-label={playing ? t("Пауза альбома или плейлиста") : t("Слушать альбом или плейлист")} onClick={() => { if (player.playlistId === queueId && player.current) player.toggle(); else if (queue.length) player.playQueue(queueId, queue, 0) }}><Icon name={playing ? 'pause' : 'play'} /></button>
+          <button className="library-plus collection-save" type="button" aria-label={saveLabel} title={saveLabel}
+            data-saved={saved || undefined} aria-busy={saving} disabled={!index || saving} onClick={() => { void toggleSaved() }}>
+            <Icon name={saved ? 'check' : 'plus'} />
+          </button>
+        </div>
+        {saveError && <p className="search-inline-error" role="alert">{t(saveError)}</p>}
         <TrackList items={data.tracks.items} queueId={queueId} onOpen={onOpen} showAlbum={kind === 'playlist'} showAdded={kind === 'playlist'} />
         {!data.tracks.items.length && <p className="collection-no-tracks">{t("В этой подборке нет доступных музыкальных треков.")}</p>}
         {error && <p className="search-inline-error" role="alert">{error && t(error)}</p>}

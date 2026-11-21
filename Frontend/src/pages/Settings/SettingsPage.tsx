@@ -1,6 +1,7 @@
 import { setPreferences, usePreferences } from '../../shared/preferences/preferences'
 import type { Language, LyricsMode } from '../../shared/preferences/preferences'
 import { useTranslation } from '../../shared/preferences/i18n'
+import StorageSettings from './StorageSettings'
 import './SettingsPage.css'
 
 const languages = { ru: 'Русский', en: 'English', kk: 'Қазақша' }
@@ -15,13 +16,15 @@ export default function SettingsPage({ onAbout }: { onAbout?: () => void }) {
   const { language, theme, accentEnabled, accentColor, lyricsMode } = usePreferences()
   const t = useTranslation()
   const [title, general, languageLabel, themeLabel] = labels[language]
+  const [section, setSection] = useState<'general' | 'storage'>('general')
 
   return <main className="workspace settings-page" aria-label={title}>
     <h1>{title}</h1>
-    <div className="settings-tabs" role="tablist" aria-label={title}>
-      <button type="button" role="tab" id="settings-general-tab" aria-selected="true" aria-controls="settings-general">{general}</button>
+    <div className="settings-tabs" role="group" aria-label={title}>
+      <button type="button" aria-pressed={section === 'general'} onClick={() => setSection('general')}>{general}</button>
+      <button type="button" aria-pressed={section === 'storage'} onClick={() => setSection('storage')}>{t('Память')}</button>
     </div>
-    <section id="settings-general" className="settings-panel" role="tabpanel" aria-labelledby="settings-general-tab">
+    {section === 'storage' ? <StorageSettings /> : <section id="settings-general" className="settings-panel" aria-label={general}>
       <label className="settings-row">
         <span>{languageLabel}</span>
         <select value={language} onChange={event => setPreferences({ language: event.currentTarget.value as Language })}>
@@ -47,7 +50,8 @@ export default function SettingsPage({ onAbout }: { onAbout?: () => void }) {
           {Object.entries(lyricsModes).map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}
         </select>
       </label>
-    </section>
+    </section>}
     {onAbout && <button type="button" className="settings-about" onClick={onAbout}>{t("О программе Tesify")}</button>}
   </main>
 }
+import { useState } from 'react'

@@ -25,3 +25,5 @@
 @media(min-width: 1500px) { .library-grid { grid-template-columns: repeat(auto-fill, minmax(195px, 1fr)); gap: 34px; } .library-page { padding-right: 32px; padding-left: 32px; } }
 @media(max-width: 760px) { .library-page { padding: 60px 17px 30px; } .library-header h1 { font-size: 28px; letter-spacing: -.9px; } .library-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 24px 17px; margin-top: 28px; } }
 @media(max-width: 450px) { .library-header h1 { font-size: 21px; letter-spacing: -.6px; } }
+.library-saved { margin-top: 24px; }
+.library-saved h2 { margin: 0 0 12px; font-size: 18px; }

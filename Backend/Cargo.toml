@@ -1,6 +1,6 @@
 [package]
 name = "tesify"
-version = "26.11.0-dev.5"
+version = "26.11.0-dev.6"
 description = "Tesify music and playlists"
 edition = "2024"
 rust-version = "1.95"
@@ -33,8 +33,11 @@ sha2 = "0.10"
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "sync"] }
 uuid = { version = "1", features = ["v4"] }
 
-[target.'cfg(target_os = "android")'.dependencies]
+[target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
 
 [profile.release]
 strip = true

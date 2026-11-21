@@ -27,3 +27,17 @@ export type PlaylistSummary = Pick<Playlist, 'id' | 'name' | 'description' | 'co
 export type PlaylistDraft = Pick<Playlist, 'name' | 'description' | 'coverUrl'>
 export type ImportResult = { playlist: Playlist; addedCount: number; duplicateCount: number; unavailableCount: number; sourceName: string }
 
+export type SavedCollection = {
+  kind: 'album' | 'playlist'
+  id: string
+  name: string
+  owner: string
+  coverUrl: string | null
+}
+
+export type LibraryIndex = {
+  playlists: PlaylistSummary[]
+  collections: SavedCollection[]
+  memberships: Record<string, string[] | undefined>
+}
+

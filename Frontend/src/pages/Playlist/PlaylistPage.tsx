@@ -4,6 +4,7 @@ import TrackArtistLinks from '../../shared/catalog/ArtistLinks/TrackArtistLinks'
 import type { OpenCatalog } from '../../shared/catalog/types'
 import { errorMessage } from '../../shared/lib/backend'
 import { usePlayback } from '../../shared/playback/PlaybackProvider'
+import { useLibrary } from '../../shared/playlists/Membership/LibraryProvider'
 import PlaylistEditor from '../../shared/playlists/PlaylistEditor/PlaylistEditor'
 import { formatAddedDate, formatDuration, totalDuration, trackCount } from '../../shared/playlists/format'
 import type { ImportResult, Playlist } from '../../shared/playlists/types'
@@ -25,6 +26,8 @@ type Props = { playlistId: string; onBack: () => void; onOpen: OpenCatalog }
 export default function PlaylistPage({ playlistId, onBack, onOpen }: Props) {
   const t = useTranslation()
   const player = usePlayback()
+  const { index, refresh } = useLibrary()
+  const updatedAt = index?.playlists.find(playlist => playlist.id === playlistId)?.updatedAt
   const [playlist, setPlaylist] = useState<Playlist | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -43,11 +46,11 @@ export default function PlaylistPage({ playlistId, onBack, onOpen }: Props) {
       .catch((error) => { if (active) setError(errorMessage(error)) })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
-  }, [playlistId, retry])
+  }, [playlistId, retry, updatedAt])
 
   const imported = useCallback((result: ImportResult) => {
-    setPlaylist(result.playlist); setImporting(false)
-  }, [])
+    setPlaylist(result.playlist); setImporting(false); void refresh()
+  }, [refresh])
 
   const entries = useMemo(() => sortPlaylistTracks(playlist?.tracks ?? [], sort), [playlist, sort])
   const tracks = useMemo(() => entries.map(({ track }) => track), [entries])
@@ -62,7 +65,7 @@ export default function PlaylistPage({ playlistId, onBack, onOpen }: Props) {
   return (
     <main className="workspace playlist-page" aria-label={t("Плейлист")}>
       <button className="playlist-back" onClick={onBack}><Icon name="back" />{t("Библиотека")}</button>
-      {loading ? <MusicLoader label={t("Загружаем плейлист")} /> : error || !playlist ? <div className="playlist-error" role="alert"><h1>{t("Не удалось открыть плейлист")}</h1><p>{error && t(error)}</p><Button variant="secondary" onClick={() => setRetry((value) => value + 1)}>{t("Попробовать снова")}</Button></div> : <>
+      {loading && !playlist ? <MusicLoader label={t("Загружаем плейлист")} /> : error || !playlist ? <div className="playlist-error" role="alert"><h1>{t("Не удалось открыть плейлист")}</h1><p>{error && t(error)}</p><Button variant="secondary" onClick={() => setRetry((value) => value + 1)}>{t("Попробовать снова")}</Button></div> : <>
         <header className="playlist-hero">
           <PlaylistCover url={playlist.coverUrl} name={playlist.name} className="playlist-hero-cover" />
           <div className="playlist-hero-info">
@@ -102,9 +105,9 @@ export default function PlaylistPage({ playlistId, onBack, onOpen }: Props) {
             </tr>
           })}</tbody></table></div>
         </section>}
-        {editing && <PlaylistEditor initial={playlist} onClose={() => setEditing(false)} onSave={async (draft) => { setPlaylist(await updatePlaylist(playlist.id, draft)); setEditing(false) }} onImport={async (draft) => { setPlaylist(await updatePlaylist(playlist.id, draft)); setEditing(false); setImporting(true) }} />}
+        {editing && <PlaylistEditor initial={playlist} onClose={() => setEditing(false)} onSave={async (draft) => { setPlaylist(await updatePlaylist(playlist.id, draft)); setEditing(false); void refresh() }} onImport={async (draft) => { setPlaylist(await updatePlaylist(playlist.id, draft)); setEditing(false); setImporting(true); void refresh() }} />}
         {importing && <ImportPlaylistModal playlistId={playlist.id} onClose={() => { setImporting(false); setEditing(true) }} onImported={imported} />}
-        {deleting && <Modal title={t("Удалить плейлист?")} onClose={() => setDeleting(false)} busy={deleteBusy}>{(close) => <><p className="playlist-delete-note">{t("Плейлист «{0}» и его треки будут удалены из библиотеки.", playlist.name)}</p>{deleteError && <p className="form-error" role="alert">{t(deleteError)}</p>}<div className="modal-actions"><Button variant="secondary" onClick={close} disabled={deleteBusy}>{t("Отмена")}</Button><Button variant="danger" disabled={deleteBusy} aria-busy={deleteBusy} onClick={async () => { setDeleteBusy(true); try { await deletePlaylist(playlist.id); onBack() } catch (error) { setDeleteError(errorMessage(error)) } finally { setDeleteBusy(false) } }}>{deleteBusy && <MusicLoader variant="compact" label={t("Удаляем плейлист")} />}{deleteBusy ? t("Удаляем…") : t("Удалить")}</Button></div></>}</Modal>}
+        {deleting && <Modal title={t("Удалить плейлист?")} onClose={() => setDeleting(false)} busy={deleteBusy}>{(close) => <><p className="playlist-delete-note">{t("Плейлист «{0}» и его треки будут удалены из библиотеки.", playlist.name)}</p>{deleteError && <p className="form-error" role="alert">{t(deleteError)}</p>}<div className="modal-actions"><Button variant="secondary" onClick={close} disabled={deleteBusy}>{t("Отмена")}</Button><Button variant="danger" disabled={deleteBusy} aria-busy={deleteBusy} onClick={async () => { setDeleteBusy(true); try { await deletePlaylist(playlist.id); void refresh(); onBack() } catch (error) { setDeleteError(errorMessage(error)) } finally { setDeleteBusy(false) } }}>{deleteBusy && <MusicLoader variant="compact" label={t("Удаляем плейлист")} />}{deleteBusy ? t("Удаляем…") : t("Удалить")}</Button></div></>}</Modal>}
       </>}
     </main>
   )

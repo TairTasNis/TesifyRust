@@ -118,7 +118,8 @@
 
 /* Текст песни */
 
-.desktop--mobile .lyrics-page { filter: none; }
+.desktop--mobile .lyrics-page { filter: none; transform: none; transition: none; }
+.desktop--mobile .lyrics-icon-button { touch-action: manipulation; }
 .desktop--mobile .lyrics-header { top: calc(8px + env(safe-area-inset-top, 0px)); inset-inline: var(--mobile-gutter); }
 .desktop--mobile .lyrics-header-actions { position: relative; }
 .desktop--mobile .lyrics-icon-button { width: 44px; height: 44px; }
@@ -133,8 +134,6 @@
 .desktop--mobile .lyrics-line[data-active="true"] .lyrics-word[data-lit="true"] { color: white; }
 .desktop--mobile .lyrics-stage[data-browsing="true"] .lyrics-line .lyrics-word { color: inherit; }
 .desktop--mobile .lyrics-background-orbit { animation: none; will-change: auto; }
-.desktop--mobile .lyrics-background-orbit--1,
-.desktop--mobile .lyrics-background-orbit--2 { display: none; }
 @media (orientation: portrait) {
   .desktop--mobile .lyrics-layout { padding-top: 62px; }
   .desktop--mobile .lyrics-now-playing { padding-inline-end: 47px; }
@@ -206,6 +205,7 @@
   cursor: pointer;
 }
 .mobile-mini-player-cover { width: 42px; height: 42px; flex: 0 0 auto; border-radius: 8px; }
+.mobile-mini-player-open { touch-action: manipulation; }
 .mobile-mini-player-track { pointer-events: none; }
 .mobile-mini-player-seek {
   appearance: none;
@@ -242,8 +242,6 @@
 .mobile-mini-player-toggle > svg { width: 22px; height: 22px; }
 .mobile-mini-player-toggle .music-loader { color: inherit; }
 .mobile-mini-player-open:focus-visible, .mobile-mini-player-toggle:focus-visible { outline-offset: 2px; }
-.mobile-mini-player[data-expanded] .mobile-mini-player-surface { transform: translateY(120%); opacity: 0; }
-.mobile-mini-player[data-expanded] :is(.mobile-mini-player-open, .mobile-mini-player-toggle, .mobile-mini-player-error) { visibility: hidden; }
 .mobile-mini-player[data-lyrics] {
   z-index: 7;
   inset: auto max(12px, env(safe-area-inset-right, 0px)) calc(8px + env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
@@ -285,22 +283,10 @@
 .desktop--mobile .app-window--about .mobile-mini-player,
 .desktop--mobile .mobile-mini-player[data-lyrics] { bottom: calc(8px + env(safe-area-inset-bottom, 0px)); }
 @media (prefers-reduced-motion: reduce) {
-  .mobile-mini-player[data-hidden], .mobile-mini-player[data-expanded] .mobile-mini-player-surface { transform: none; }
+  .mobile-mini-player[data-hidden] { transform: none; }
 }
 
 /* Текущий трек */
-
-.player-artwork-transition {
-  position: fixed;
-  z-index: 20;
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  pointer-events: none;
-}
-.player-artwork-transition > canvas { display: block; width: 100%; height: 100%; }
-.player-artwork-transition > svg { width: 35%; height: 35%; }
-:is(.now-playing-cover, .mobile-mini-player-cover)[data-moving] { visibility: hidden; }
 
 .now-playing-page {
   position: absolute;
@@ -311,13 +297,21 @@
   isolation: isolate;
   font-family: Manrope, "Segoe UI", sans-serif;
   color: var(--ink);
-}
-.now-playing-background {
-  position: absolute;
-  z-index: -1;
-  inset: 0;
   background: radial-gradient(ellipse at 50% 20%, var(--accent-soft), var(--canvas) 72%), var(--canvas);
-  transition: transform var(--motion-modal) var(--ease-out), opacity var(--motion-modal) var(--ease-out);
+  transform: translateY(100%);
+  visibility: hidden;
+  transition: transform var(--motion-modal) var(--ease-drawer), visibility 0s var(--motion-modal);
+}
+.now-playing-page[data-shown] {
+  transform: translateY(0);
+  visibility: visible;
+  transition-duration: calc(2 * var(--motion-modal)), 0s;
+  transition-delay: 0s;
+}
+html[data-input="keyboard"] .now-playing-page { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .now-playing-page { transform: none; opacity: 0; transition: opacity var(--motion-fast) var(--ease-out), visibility 0s var(--motion-fast); }
+  .now-playing-page[data-shown] { transform: none; opacity: 1; transition-duration: var(--motion-fast), 0s; }
 }
 .now-playing-header {
   display: grid;
@@ -340,6 +334,7 @@
   background: transparent;
   color: var(--ink);
   cursor: pointer;
+  touch-action: manipulation;
 }
 .now-playing-close { background: var(--surface); }
 .now-playing-close svg { width: 20px; height: 20px; transform: rotate(90deg); }
@@ -381,18 +376,8 @@
 .now-playing-play > svg { width: 30px !important; height: 30px !important; }
 .now-playing-play .music-loader { color: inherit; }
 .now-playing-controls .now-playing-lyrics { grid-column: 3; background: var(--surface); }
+.now-playing-controls .now-playing-save { grid-column: 1; background: var(--surface); }
 .now-playing-error { margin: 12px 0 0; color: var(--error-ink); font-size: 12px; }
-.now-playing-page :is(.now-playing-header, .now-playing-controls, .now-playing-seek, .now-playing-error) { transition: opacity var(--motion-base) var(--ease-out); }
-.now-playing-page[data-closing] :is(.now-playing-identity, .now-playing-cover) { visibility: hidden; }
-.now-playing-page[data-closing] :is(.now-playing-header, .now-playing-controls, .now-playing-seek, .now-playing-error) { opacity: 0; }
-.now-playing-page[data-closing] .now-playing-background { transform: translateY(100%); }
-@starting-style {
-  html:not([data-input="keyboard"]) .now-playing-background { transform: translateY(100%); }
-  .now-playing-page :is(.now-playing-header, .now-playing-controls, .now-playing-seek) { opacity: 0; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .now-playing-background, .now-playing-page[data-closing] .now-playing-background { transform: none; }
-}
 @media (orientation: landscape) and (max-height: 540px) {
   .now-playing-layout { grid-template-columns: auto minmax(210px, 355px); justify-content: center; align-items: center; gap: clamp(18px, 5vw, 55px); padding-block: 5px 14px; }
   .now-playing-layout > .now-playing-cover { width: min(33vw, 67dvh, 230px); }

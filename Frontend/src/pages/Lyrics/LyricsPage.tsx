@@ -91,9 +91,9 @@ export default function LyricsPage({ onClose, mobile, isMaximized = false, onTog
   }, [])
 
   const close = useCallback(() => {
-    if (!canAnimate()) { onClose(); return }
+    if (mobile || !canAnimate()) { onClose(); return }
     setClosing(true)
-  }, [onClose])
+  }, [mobile, onClose])
   useEffect(() => {
     if (!closing) return
     const timer = window.setTimeout(onClose, 180)
@@ -135,7 +135,7 @@ export default function LyricsPage({ onClose, mobile, isMaximized = false, onTog
   const busy = !response && !message
   const lyrics = response?.lyrics
   return <section className="lyrics-page" id="track-lyrics" aria-label={t("Текст песни «{0}»", track.title)} ref={pageRef} data-closing={closing || undefined} style={style as CSSProperties}>
-    <LyricsBackground coverUrl={track.coverUrl} playing={player.playing && !player.loading} />
+    <LyricsBackground coverUrl={track.coverUrl} playing={player.playing && !player.loading} mobile={mobile} />
     <header className="lyrics-header" data-tauri-drag-region>
       <span data-tauri-drag-region><Icon name="lyrics" />{t("Текст песни")}</span>
       <div className="lyrics-header-actions">

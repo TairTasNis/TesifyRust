@@ -1,5 +1,47 @@
-use serde::{Deserialize, Serialize};
 use crate::shared::spotify::models::ArtistRef;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum CollectionKind {
+    Album,
+    Playlist,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedCollection {
+    pub kind: CollectionKind,
+    pub id: String,
+    pub name: String,
+    pub cover_url: Option<String>,
+    pub owner: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryIndex {
+    pub playlists: Vec<PlaylistSummary>,
+    pub collections: Vec<SavedCollection>,
+    pub memberships: HashMap<String, Vec<String>>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrackMembershipEdit {
+    pub spotify_id: String,
+    pub add: Vec<String>,
+    pub remove: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CollectionEdit {
+    pub kind: CollectionKind,
+    pub id: String,
+    pub saved: bool,
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]

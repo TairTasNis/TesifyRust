@@ -197,4 +197,15 @@ impl SpotifyClient {
             .map(|(_, track)| track.clone())
             .ok_or_else(|| "Обновите страницу каталога и включите трек снова.".into())
     }
+
+    pub fn remember_library_track(&self, track: Track) {
+        if let Ok(mut tracks) = self.tracks.lock() {
+            if tracks.len() >= 10000 {
+                if let Some(oldest) = tracks.iter().min_by_key(|(_, (at, _))| *at).map(|(id, _)| id.clone()) {
+                    tracks.remove(&oldest);
+                }
+            }
+            tracks.insert(track.spotify_id.clone(), (Instant::now(), track));
+        }
+    }
 }

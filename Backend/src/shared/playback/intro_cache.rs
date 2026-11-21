@@ -4,7 +4,13 @@ use axum::body::Bytes;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::{collections::HashMap, fs, path::PathBuf, time::SystemTime};
+use std::{
+    collections::HashMap,
+    fs, io,
+    path::PathBuf,
+    sync::{Arc, Mutex},
+    time::SystemTime,
+};
 
 const MAX_FILE: u64 = 1024 * 1024;
 const MAX_CACHE: u64 = 64 * 1024 * 1024;
@@ -76,11 +82,15 @@ impl CachedIntro {
 #[derive(Clone)]
 pub(super) struct IntroCache {
     root: PathBuf,
+    generation: Arc<Mutex<u64>>,
 }
 
 impl IntroCache {
     pub fn new(root: PathBuf) -> Self {
-        Self { root }
+        Self {
+            root,
+            generation: Arc::new(Mutex::new(0)),
+        }
     }
 
     pub fn key(track: &Track) -> String {
@@ -128,33 +138,49 @@ impl IntroCache {
         Ok(())
     }
 
+    pub fn generation(&self) -> u64 {
+        *self.generation.lock().expect("intro cache lock")
+    }
+
+    pub fn save_if_current(
+        &self,
+        generation: u64,
+        key: &str,
+        intro: &CachedIntro,
+    ) -> Result<(), String> {
+        let current = self.generation.lock().expect("intro cache lock");
+        if *current == generation {
+            self.save(key, intro)?;
+        }
+        Ok(())
+    }
+
+    pub fn size(&self) -> io::Result<u64> {
+        let _guard = self.generation.lock().expect("intro cache lock");
+        Ok(self.files()?.iter().map(|(_, size, _)| size).sum())
+    }
+
+    pub fn clear(&self) -> io::Result<()> {
+        let mut generation = self.generation.lock().expect("intro cache lock");
+        *generation += 1;
+        for (_, _, path) in self.files()? {
+            match fs::remove_file(path) {
+                Ok(()) => {}
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(())
+    }
+
     pub fn remove(&self, key: &str) {
         let _ = fs::remove_file(self.root.join(format!("{key}.json")));
     }
 
     fn prune(&self) {
-        let Ok(entries) = fs::read_dir(&self.root) else {
+        let Ok(mut files) = self.files() else {
             return;
         };
-        let mut files = entries
-            .flatten()
-            .filter_map(|entry| {
-                let name = entry.file_name();
-                let stem = name.to_str()?.strip_suffix(".json")?;
-                if stem.len() != 64 || !stem.bytes().all(|c| c.is_ascii_hexdigit()) {
-                    return None;
-                }
-                let metadata = entry.metadata().ok()?;
-                if !metadata.is_file() {
-                    return None;
-                }
-                Some((
-                    metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH),
-                    metadata.len(),
-                    entry.path(),
-                ))
-            })
-            .collect::<Vec<_>>();
         files.sort_by_key(|(modified, _, _)| *modified);
         let mut bytes: u64 = files.iter().map(|(_, size, _)| size).sum();
         let mut count = files.len();
@@ -167,6 +193,38 @@ impl IntroCache {
                 count -= 1;
             }
         }
+    }
+
+    fn files(&self) -> io::Result<Vec<(SystemTime, u64, PathBuf)>> {
+        let entries = match fs::read_dir(&self.root) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => return Err(error),
+        };
+        let mut files = Vec::new();
+        for entry in entries {
+            let entry = entry?;
+            let name = entry.file_name();
+            let Some(stem) = name.to_str().and_then(|name| name.strip_suffix(".json")) else {
+                continue;
+            };
+            if stem.len() != 64 || !stem.bytes().all(|c| c.is_ascii_hexdigit()) {
+                continue;
+            }
+            let metadata = match entry.metadata() {
+                Ok(metadata) => metadata,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+                Err(error) => return Err(error),
+            };
+            if metadata.is_file() {
+                files.push((
+                    metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH),
+                    metadata.len(),
+                    entry.path(),
+                ));
+            }
+        }
+        Ok(files)
     }
 }
 
@@ -241,6 +299,27 @@ pub(super) mod tests {
             reopened.source().url.is_empty(),
             "Expired signed URLs must not be persisted"
         );
+    }
+
+    #[test]
+    fn clear_removes_only_previews_and_ignores_pending_downloads() {
+        let directory = TemporaryCache::new();
+        let cache = IntroCache::new(directory.0.clone());
+        let key = "a".repeat(64);
+        let generation = cache.generation();
+        cache.save_if_current(generation, &key, &sample()).unwrap();
+        assert!(cache.size().unwrap() > 0);
+        let other = directory.0.join("other.json");
+        fs::write(&other, "keep").unwrap();
+
+        cache.clear().unwrap();
+        cache.save_if_current(generation, &key, &sample()).unwrap();
+        assert_eq!(cache.size().unwrap(), 0);
+        assert!(other.exists());
+        cache
+            .save_if_current(cache.generation(), &key, &sample())
+            .unwrap();
+        assert!(cache.size().unwrap() > 0);
     }
 
     #[test]

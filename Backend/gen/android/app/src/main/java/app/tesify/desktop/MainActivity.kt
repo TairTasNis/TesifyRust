@@ -24,7 +24,9 @@ class MainActivity : TauriActivity() {
     }
     ViewCompat.requestApplyInsets(content)
 
-    onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+  }
+
+  private val overlayBack = object : OnBackPressedCallback(true) {
       override fun handleOnBackPressed() {
         val webView = contentWebView
         if (webView == null) {
@@ -45,7 +47,17 @@ class MainActivity : TauriActivity() {
         onBackPressedDispatcher.onBackPressed()
         isEnabled = true
       }
-    })
+  }
+
+  override fun onPostResume() {
+    super.onPostResume()
+    // Handle overlays before Tauri's default WebView history navigation.
+    onBackPressedDispatcher.addCallback(overlayBack)
+  }
+
+  override fun onPause() {
+    overlayBack.remove()
+    super.onPause()
   }
 
   override fun onWebViewCreate(webView: WebView) {

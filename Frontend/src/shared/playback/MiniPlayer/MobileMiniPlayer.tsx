@@ -47,7 +47,7 @@ export default function MobileMiniPlayer({ lyricsOpen, expanded, onOpen }: {
       aria-label={t("Показать плеер")} aria-expanded={!hidden} aria-controls="mobile-mini-player"
       onClick={reveal} onPointerEnter={event => { if (event.pointerType === 'mouse') reveal() }}><span /></button>}
     <section ref={panel} className="mobile-mini-player" id="mobile-mini-player" aria-label={t("Миниплеер")}
-      inert={expanded || hidden} data-expanded={expanded || undefined} data-lyrics={lyricsOpen || undefined}
+      inert={expanded || hidden} data-lyrics={lyricsOpen || undefined}
       data-hidden={hidden || undefined} onPointerDown={lyricsOpen ? reveal : undefined}>
       <span className="mobile-mini-player-surface" aria-hidden="true"><span style={{ transform: `scaleX(${progress / 100})` }} /></span>
       {lyricsOpen ? <>

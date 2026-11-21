@@ -239,6 +239,7 @@ impl PlaybackService {
     }
 
     async fn warm_intro(&self, entry: &SourceEntry) -> Result<(), String> {
+        let generation = self.intro_cache.generation();
         let _guard = entry.warm_lock.lock().await;
         if entry.intro.get().is_some() {
             return Ok(());
@@ -314,7 +315,7 @@ impl PlaybackService {
         let cache = self.intro_cache.clone();
         tauri::async_runtime::spawn_blocking(move || {
             if let Some(intro) = entry.intro.get() {
-                if let Err(error) = cache.save(&entry.key, intro) {
+                if let Err(error) = cache.save_if_current(generation, &entry.key, intro) {
                     eprintln!("Audio intro cache: {error}");
                 }
             }
@@ -322,6 +323,14 @@ impl PlaybackService {
         .await
         .map_err(|_| "Не удалось сохранить начало записи.")?;
         Ok(())
+    }
+
+    pub fn intro_storage_bytes(&self) -> std::io::Result<u64> {
+        self.intro_cache.size()
+    }
+
+    pub fn clear_intro_storage(&self) -> std::io::Result<()> {
+        self.intro_cache.clear()
     }
 
     fn cached(&self, key: &str) -> Option<SourceEntry> {

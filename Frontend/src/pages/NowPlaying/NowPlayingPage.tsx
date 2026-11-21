@@ -4,26 +4,28 @@ import TrackArtistLinks from '../../shared/catalog/ArtistLinks/TrackArtistLinks'
 import type { OpenCatalog } from '../../shared/catalog/types'
 import { formatDuration } from '../../shared/playlists/format'
 import { usePlayback } from '../../shared/playback/PlaybackProvider'
+import TrackPlaylistButton from '../../shared/playlists/Membership/TrackPlaylistButton'
 import { useTranslation } from '../../shared/preferences/i18n'
 import Icon from '../../shared/ui/Icon/Icon'
 import MusicLoader from '../../shared/ui/MusicLoader/MusicLoader'
 import PlaylistCover from '../../shared/ui/PlaylistCover/PlaylistCover'
 
-type Props = { closing: boolean; onClose: () => void; onLyrics: () => void; onOpen: OpenCatalog }
+type Props = { shown: boolean; active: boolean; onClose: () => void; onLyrics: () => void; onOpen: OpenCatalog }
 const clock = (seconds: number) => formatDuration(Math.floor(seconds) * 1000)
 
-export default function NowPlayingPage({ closing, onClose, onLyrics, onOpen }: Props) {
+export default function NowPlayingPage({ shown, active, onClose, onLyrics, onOpen }: Props) {
   const t = useTranslation()
   const player = usePlayback()
   const close = useRef<HTMLButtonElement>(null)
   const track = player.current
 
-  useLayoutEffect(() => { close.current?.focus({ preventScroll: true }) }, [])
+  useLayoutEffect(() => {
+    if (active && document.documentElement.dataset.input === 'keyboard') close.current?.focus({ preventScroll: true })
+  }, [active])
   if (!track) return null
 
   const playbackLabel = player.error ? t("Повторить") : player.playing ? t("Пауза") : t("Продолжить")
-  return <section id="now-playing" className="now-playing-page" aria-label={t("Сейчас играет")} data-closing={closing || undefined} inert={closing}>
-    <div className="now-playing-background" aria-hidden="true" />
+  return <section id="now-playing" className="now-playing-page" aria-label={t("Сейчас играет")} data-shown={shown || undefined} inert={!active}>
     <header className="now-playing-header">
       <button ref={close} type="button" className="now-playing-close" onClick={onClose} aria-label={t("Свернуть плеер")}><Icon name="chevron" /></button>
       <span>{t("Сейчас играет")}</span>
@@ -35,6 +37,7 @@ export default function NowPlayingPage({ closing, onClose, onLyrics, onOpen }: P
           <div className="now-playing-identity"><h1>{track.title}</h1><TrackArtistLinks track={track} onOpen={onOpen} /></div>
           <SeekTrack key={track.id} />
           <div className="now-playing-controls">
+            <TrackPlaylistButton spotifyId={track.spotifyId} title={track.title} className="now-playing-save" />
             <div className="now-playing-transport">
               <button type="button" aria-label={t("Предыдущий трек")} onClick={player.previous}><Icon name="previous" /></button>
               <button type="button" className="now-playing-play" aria-label={playbackLabel} aria-busy={player.loading} onClick={player.error ? player.retry : player.toggle}>

@@ -22,6 +22,10 @@ pub fn router(services: AppServices) -> Router {
     Router::new()
         .route("/health", get(|| async { Json(json!({"ready":true})) }))
         .route("/playlists", get(list).post(create))
+        .route("/library", get(library_index))
+        .route("/library/memberships", post(track_memberships))
+        .route("/library/collections", post(saved_collection))
+        .route("/settings/storage", get(storage_usage).delete(clear_song_previews))
         .route("/playlists/{id}", get(detail).put(update).delete(delete))
         .route("/playlists/{id}/import/spotify", post(import))
         .route("/covers", post(upload))
@@ -51,6 +55,23 @@ async fn loopback_only(request: Request, next: Next) -> Response {
 
 async fn list(State(services): State<AppServices>) -> ApiResult<Vec<PlaylistSummary>> {
     services.library.list().map(Json).map_err(error)
+}
+async fn library_index(State(services): State<AppServices>) -> ApiResult<LibraryIndex> {
+    tokio::task::spawn_blocking(move || services.library.index()).await
+        .map_err(|_| error("Не удалось прочитать библиотеку.".into()))?
+        .map(Json).map_err(error)
+}
+async fn track_memberships(State(services): State<AppServices>, Json(edit): Json<TrackMembershipEdit>) -> ApiResult<LibraryIndex> {
+    crate::pages::library::commands::edit_memberships(&services, edit).await.map(Json).map_err(error)
+}
+async fn saved_collection(State(services): State<AppServices>, Json(edit): Json<CollectionEdit>) -> ApiResult<LibraryIndex> {
+    crate::pages::library::commands::edit_collection(&services, edit).await.map(Json).map_err(error)
+}
+async fn storage_usage(State(services): State<AppServices>) -> ApiResult<crate::pages::settings::commands::StorageUsage> {
+    crate::pages::settings::commands::storage_usage(&services, false).await.map(Json).map_err(error)
+}
+async fn clear_song_previews(State(services): State<AppServices>) -> ApiResult<crate::pages::settings::commands::StorageUsage> {
+    crate::pages::settings::commands::storage_usage(&services, true).await.map(Json).map_err(error)
 }
 async fn create(
     State(services): State<AppServices>,
