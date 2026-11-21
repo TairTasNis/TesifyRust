@@ -9,6 +9,7 @@ import { useTranslation } from '../../shared/preferences/i18n'
 import Icon from '../../shared/ui/Icon/Icon'
 import MusicLoader from '../../shared/ui/MusicLoader/MusicLoader'
 import PlaylistCover from '../../shared/ui/PlaylistCover/PlaylistCover'
+import { usePlayerTransition } from './playerTransition'
 
 type Props = { shown: boolean; active: boolean; onClose: () => void; onLyrics: () => void; onOpen: OpenCatalog }
 const clock = (seconds: number) => formatDuration(Math.floor(seconds) * 1000)
@@ -16,8 +17,10 @@ const clock = (seconds: number) => formatDuration(Math.floor(seconds) * 1000)
 export default function NowPlayingPage({ shown, active, onClose, onLyrics, onOpen }: Props) {
   const t = useTranslation()
   const player = usePlayback()
+  const page = useRef<HTMLElement>(null)
   const close = useRef<HTMLButtonElement>(null)
   const track = player.current
+  usePlayerTransition(page, shown, shown && !active, track?.id)
 
   useLayoutEffect(() => {
     if (active && document.documentElement.dataset.input === 'keyboard') close.current?.focus({ preventScroll: true })
@@ -25,7 +28,7 @@ export default function NowPlayingPage({ shown, active, onClose, onLyrics, onOpe
   if (!track) return null
 
   const playbackLabel = player.error ? t("Повторить") : player.playing ? t("Пауза") : t("Продолжить")
-  return <section id="now-playing" className="now-playing-page" aria-label={t("Сейчас играет")} data-shown={shown || undefined} inert={!active}>
+  return <section ref={page} id="now-playing" className="now-playing-page" aria-label={t("Сейчас играет")} data-shown={shown || undefined} inert={!active}>
     <header className="now-playing-header">
       <button ref={close} type="button" className="now-playing-close" onClick={onClose} aria-label={t("Свернуть плеер")}><Icon name="chevron" /></button>
       <span>{t("Сейчас играет")}</span>
@@ -35,19 +38,21 @@ export default function NowPlayingPage({ shown, active, onClose, onLyrics, onOpe
         <PlaylistCover url={track.coverUrl} name={track.title} eager className="now-playing-cover" />
         <div className="now-playing-panel">
           <div className="now-playing-identity"><h1>{track.title}</h1><TrackArtistLinks track={track} onOpen={onOpen} /></div>
-          <SeekTrack key={track.id} />
-          <div className="now-playing-controls">
-            <TrackPlaylistButton spotifyId={track.spotifyId} title={track.title} className="now-playing-save" />
-            <div className="now-playing-transport">
-              <button type="button" aria-label={t("Предыдущий трек")} onClick={player.previous}><Icon name="previous" /></button>
-              <button type="button" className="now-playing-play" aria-label={playbackLabel} aria-busy={player.loading} onClick={player.error ? player.retry : player.toggle}>
-                {player.loading && player.playing ? <MusicLoader variant="spinner" label={t("Загрузка трека")} /> : <Icon name={player.playing ? 'pause' : 'play'} />}
-              </button>
-              <button type="button" aria-label={t("Следующий трек")} onClick={player.next} disabled={!player.canNext}><Icon name="next" /></button>
+          <div>
+            <SeekTrack key={track.id} />
+            <div className="now-playing-controls">
+              <TrackPlaylistButton spotifyId={track.spotifyId} title={track.title} className="now-playing-save" />
+              <div className="now-playing-transport">
+                <button type="button" aria-label={t("Предыдущий трек")} onClick={player.previous}><Icon name="previous" /></button>
+                <button type="button" className="now-playing-play" aria-label={playbackLabel} aria-busy={player.loading} onClick={player.error ? player.retry : player.toggle}>
+                  {player.loading && player.playing ? <MusicLoader variant="spinner" label={t("Загрузка трека")} /> : <Icon name={player.playing ? 'pause' : 'play'} />}
+                </button>
+                <button type="button" aria-label={t("Следующий трек")} onClick={player.next} disabled={!player.canNext}><Icon name="next" /></button>
+              </div>
+              <button type="button" className="now-playing-lyrics" aria-label={t("Показать текст песни")} onClick={onLyrics}><Icon name="lyrics" /></button>
             </div>
-            <button type="button" className="now-playing-lyrics" aria-label={t("Показать текст песни")} onClick={onLyrics}><Icon name="lyrics" /></button>
+            {player.error && <p className="now-playing-error" role="alert">{t(player.error.replace(/^PlayEngine: /, ''))}</p>}
           </div>
-          {player.error && <p className="now-playing-error" role="alert">{t(player.error.replace(/^PlayEngine: /, ''))}</p>}
         </div>
       </div>
     </div>

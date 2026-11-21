@@ -36,6 +36,7 @@ function AppContent() {
   const player = usePlayback()
   const [route, setRoute] = useState(routeFromHash)
   const [lyricsOpen, setLyricsOpen] = useState(false)
+  const [keepLyrics, setKeepLyrics] = useState(false)
   const [playerOpen, setPlayerOpen] = useState(false)
   const backPending = useRef(false)
   const activePage = route.page
@@ -53,9 +54,11 @@ function AppContent() {
     setLyricsOpen(false)
     if (window.history.state?.tesifyOverlay === 'lyrics') dismissOverlay()
   }, [dismissOverlay])
+  const finishLyricsExit = useCallback(() => setKeepLyrics(false), [])
 
   const closePlayer = useCallback(() => {
     setPlayerOpen(false)
+    setKeepLyrics(false)
     if (window.history.state?.tesifyOverlay === 'player') dismissOverlay()
   }, [dismissOverlay])
 
@@ -68,6 +71,7 @@ function AppContent() {
   function openLyrics() {
     if (backPending.current || window.history.state?.tesifyOverlay !== 'player') return
     window.history.pushState({ tesifyOverlay: 'lyrics' }, '')
+    setKeepLyrics(true)
     setLyricsOpen(true)
   }
 
@@ -83,6 +87,8 @@ function AppContent() {
       const overlay = window.history.state?.tesifyOverlay
       setPlayerOpen(Boolean(trackId) && (overlay === 'player' || overlay === 'lyrics'))
       setLyricsOpen(Boolean(trackId) && overlay === 'lyrics')
+      if (trackId && overlay === 'lyrics') setKeepLyrics(true)
+      else if (overlay !== 'player' || !trackId) setKeepLyrics(false)
     }
     window.addEventListener('popstate', syncHistory)
     window.addEventListener('hashchange', syncHistory)
@@ -131,6 +137,7 @@ function AppContent() {
   function navigate(page: PageId, id?: string) {
     setPlayerOpen(false)
     setLyricsOpen(false)
+    setKeepLyrics(false)
     if (page === 'about') aboutEnteredFromApp.current = true
     const hash = id ? `${page}/${id}` : page
     if (window.history.state?.tesifyOverlay) window.history.replaceState(null, '', `#${hash}`)
@@ -152,6 +159,7 @@ function AppContent() {
   const leaveCatalog = () => { if (catalogEnteredFromApp.current) window.history.back(); else navigate('search') }
   const sidebarPage = activePage === 'playlist' ? 'library' : ['artist', 'album', 'spotify-playlist'].includes(activePage) ? 'search' : activePage
   const playerExpanded = mobile && playerOpen
+  const lyricsPresent = lyricsOpen || (playerExpanded && keepLyrics)
   const overlayOpen = lyricsOpen || playerExpanded
   const page = activePage === 'about' ? <AboutPage onBack={leaveAbout} /> : <>
     <Sidebar activePage={sidebarPage} mobile={mobile} onNavigate={navigate} />
@@ -166,20 +174,22 @@ function AppContent() {
   </>
 
   return (
-    <AppWindow appWindow={appWindow} isAbout={activePage === 'about'} hasPlayer={Boolean(player.current)} isLyrics={lyricsOpen} isPlayer={playerExpanded} mobile={mobile}>
+    <AppWindow appWindow={appWindow} isAbout={activePage === 'about'} hasPlayer={Boolean(player.current)} isLyrics={lyricsPresent} isPlayer={playerExpanded} mobile={mobile}>
       {mobile ? <div style={{ display: 'contents' }} inert={overlayOpen} aria-hidden={overlayOpen || undefined}>{page}</div> : page}
       {mobile && player.current && <NowPlayingPage shown={playerExpanded} active={playerExpanded && !lyricsOpen} onClose={closePlayer}
         onLyrics={openLyrics} onOpen={openCatalog} />}
-      {lyricsOpen && player.current && (
+      {lyricsPresent && player.current && (
         <LyricsPage
           onClose={closeLyrics}
           mobile={mobile}
+          shown={lyricsOpen}
+          onExited={finishLyricsExit}
           isMaximized={appWindow.isMaximized}
           onToggleMaximize={mobile ? undefined : appWindow.toggleMaximize}
-        />
+        >{mobile && <MobileMiniPlayer lyricsOpen expanded={false} onOpen={openPlayer} />}</LyricsPage>
       )}
       {mobile
-        ? <MobileMiniPlayer lyricsOpen={lyricsOpen} expanded={!lyricsOpen && playerExpanded} onOpen={openPlayer} />
+        ? !lyricsPresent && <MobileMiniPlayer lyricsOpen={false} expanded={playerExpanded} onOpen={openPlayer} />
         : <MiniPlayer lyricsOpen={lyricsOpen} onToggleLyrics={() => setLyricsOpen(open => !open)} onOpen={openCatalog} />}
     </AppWindow>
   )

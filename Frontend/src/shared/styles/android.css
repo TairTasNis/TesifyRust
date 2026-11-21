@@ -118,7 +118,7 @@
 
 /* Текст песни */
 
-.desktop--mobile .lyrics-page { filter: none; transform: none; transition: none; }
+.desktop--mobile .lyrics-page { opacity: 1; filter: none; transform: none; transition: none; }
 .desktop--mobile .lyrics-icon-button { touch-action: manipulation; }
 .desktop--mobile .lyrics-header { top: calc(8px + env(safe-area-inset-top, 0px)); inset-inline: var(--mobile-gutter); }
 .desktop--mobile .lyrics-header-actions { position: relative; }
@@ -298,20 +298,14 @@
   font-family: Manrope, "Segoe UI", sans-serif;
   color: var(--ink);
   background: radial-gradient(ellipse at 50% 20%, var(--accent-soft), var(--canvas) 72%), var(--canvas);
-  transform: translateY(100%);
   visibility: hidden;
-  transition: transform var(--motion-modal) var(--ease-drawer), visibility 0s var(--motion-modal);
 }
-.now-playing-page[data-shown] {
-  transform: translateY(0);
-  visibility: visible;
-  transition-duration: calc(2 * var(--motion-modal)), 0s;
-  transition-delay: 0s;
-}
-html[data-input="keyboard"] .now-playing-page { transition: none; }
+.now-playing-page:is([data-shown], [data-transitioning]) { visibility: visible; }
+.player-transition-layer { position: fixed; z-index: 20; inset: 0; overflow: hidden; pointer-events: none; }
+[data-player-moving] { visibility: hidden; }
 @media (prefers-reduced-motion: reduce) {
-  .now-playing-page { transform: none; opacity: 0; transition: opacity var(--motion-fast) var(--ease-out), visibility 0s var(--motion-fast); }
-  .now-playing-page[data-shown] { transform: none; opacity: 1; transition-duration: var(--motion-fast), 0s; }
+  html:not([data-input="keyboard"]) .now-playing-page { opacity: 0; transition: opacity var(--motion-fast) var(--ease-out), visibility 0s var(--motion-fast); }
+  html:not([data-input="keyboard"]) .now-playing-page[data-shown] { opacity: 1; transition-delay: 0s; }
 }
 .now-playing-header {
   display: grid;
@@ -358,7 +352,7 @@ html[data-input="keyboard"] .now-playing-page { transition: none; }
 .now-playing-panel { width: min(100%, 388px); min-width: 0; text-align: center; }
 .now-playing-identity { width: fit-content; max-width: 100%; margin-inline: auto; }
 .now-playing-identity h1 { margin: 0 0 4px; font-size: clamp(21px, 5vw, 30px); line-height: 1.2; letter-spacing: -.04em; overflow-wrap: anywhere; }
-.now-playing-identity .catalog-artist-links { color: var(--muted); font-size: 13px; line-height: 1.6; }
+.now-playing-identity .catalog-artist-links { display: block; color: var(--muted); font-size: 13px; line-height: 1.6; }
 .now-playing-seek { margin-top: 15px; }
 .now-playing-seek input { display: block; appearance: none; width: 100%; height: 29px; margin: 0; border: 0; border-radius: 10px; background: transparent; cursor: pointer; touch-action: none; }
 .now-playing-seek input:disabled { cursor: default; }

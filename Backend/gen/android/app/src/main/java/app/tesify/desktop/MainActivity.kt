@@ -1,5 +1,6 @@
 package app.tesify.desktop
 
+import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.webkit.WebView
@@ -65,5 +66,23 @@ class MainActivity : TauriActivity() {
     contentWebView = webView
     // A tap first resolves an audio URL in Rust, then starts the media element.
     webView.settings.mediaPlaybackRequiresUserGesture = false
+    webView.post { preferSmoothWebViewMotion(webView) }
+  }
+
+  private fun preferSmoothWebViewMotion(webView: WebView) {
+    val output = webView.display ?: return
+    val supportedRates = output.supportedRefreshRates
+    val fastest = supportedRates.maxOrNull() ?: return
+    if (fastest <= 60.5f) return
+
+    val preferred = fastest.coerceAtMost(120f)
+    if (Build.VERSION.SDK_INT >= 36 && output.hasArrSupport()) {
+      // The WebView votes when it redraws, allowing Android to lower the rate when idle.
+      webView.requestedFrameRate = preferred
+    } else {
+      val windowRate = if (Build.VERSION.SDK_INT >= 34) preferred
+        else supportedRates.filter { it > 60.5f && it <= 120.5f }.maxOrNull() ?: fastest
+      window.attributes = window.attributes.apply { preferredRefreshRate = windowRate }
+    }
   }
 }

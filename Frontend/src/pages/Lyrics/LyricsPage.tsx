@@ -1,6 +1,6 @@
 import { useTranslation } from '../../shared/preferences/i18n'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import { errorMessage } from '../../shared/lib/backend'
 import { canAnimate } from '../../shared/lib/motion'
 import { catalogTracks } from '../../shared/catalog/playback'
@@ -19,18 +19,22 @@ import type { Lyrics, LyricsResponse } from './types'
 import LyricsSourcesModal from './LyricsSourcesModal'
 import LyricsTrackPicker from './LyricsTrackPicker'
 import LyricsToolbar, { LyricsSettings, useLyricsAppearance } from './LyricsToolbar'
+import { useLyricsSlide } from './useLyricsSlide'
 import './LyricsPage.css'
 
 type Props = {
   onClose: () => void
   mobile: boolean
+  shown: boolean
+  onExited?: () => void
+  children?: ReactNode
   isMaximized?: boolean
   onToggleMaximize?: () => void
 }
 const MANUAL_SCROLL_MS = 3000
 const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 
-export default function LyricsPage({ onClose, mobile, isMaximized = false, onToggleMaximize }: Props) {
+export default function LyricsPage({ onClose, mobile, shown, onExited, children, isMaximized = false, onToggleMaximize }: Props) {
   const t = useTranslation()
   const player = usePlayback()
   const { lyricsMode } = usePreferences()
@@ -51,8 +55,8 @@ export default function LyricsPage({ onClose, mobile, isMaximized = false, onTog
   const [closing, setClosing] = useState(false)
   const [sourcesFor, setSourcesFor] = useState<string | null>(null)
   const [toolDialog, setToolDialog] = useState<'appearance' | 'track' | null>(null)
-  const showTrackPicker = toolDialog === 'track'
-  const showSources = sourcesFor === key
+  const showTrackPicker = shown && toolDialog === 'track'
+  const showSources = shown && sourcesFor === key
   const [offset, setOffset] = useState<number>(() => {
     if (!track?.id) return 0
     const val = localStorage.getItem(`tesify_lyrics_offset_${track.id}`)
@@ -78,6 +82,7 @@ export default function LyricsPage({ onClose, mobile, isMaximized = false, onTog
 
   const closeRef = useRef<HTMLButtonElement>(null)
   const pageRef = useRef<HTMLElement>(null)
+  useLyricsSlide(pageRef, mobile, shown, onExited)
   const [source, setSource] = useState<{ key: string; id: string } | null>(null)
   const selectedSource = source?.key === key ? source.id : undefined
   const requestKey = `${key}/${selectedSource ?? 'auto'}`
@@ -101,12 +106,13 @@ export default function LyricsPage({ onClose, mobile, isMaximized = false, onTog
   }, [closing, onClose])
 
   useEffect(() => {
+    if (!shown) return
     const keyboard = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !event.defaultPrevented && !document.querySelector('dialog[open]') && !showSources && !showTrackPicker) { event.preventDefault(); onClose() }
     }
     document.addEventListener('keydown', keyboard)
     return () => document.removeEventListener('keydown', keyboard)
-  }, [onClose, showSources, showTrackPicker])
+  }, [onClose, showSources, showTrackPicker, shown])
 
   useEffect(() => {
     if (!trackId || !playlistId) return
@@ -134,7 +140,8 @@ export default function LyricsPage({ onClose, mobile, isMaximized = false, onTog
   if (!track) return null
   const busy = !response && !message
   const lyrics = response?.lyrics
-  return <section className="lyrics-page" id="track-lyrics" aria-label={t("Текст песни «{0}»", track.title)} ref={pageRef} data-closing={closing || undefined} style={style as CSSProperties}>
+  return <section className="lyrics-page" id="track-lyrics" aria-label={t("Текст песни «{0}»", track.title)} ref={pageRef}
+    data-closing={closing || !shown || undefined} inert={!shown} style={style as CSSProperties}>
     <LyricsBackground coverUrl={track.coverUrl} playing={player.playing && !player.loading} mobile={mobile} />
     <header className="lyrics-header" data-tauri-drag-region>
       <span data-tauri-drag-region><Icon name="lyrics" />{t("Текст песни")}</span>
@@ -193,13 +200,14 @@ export default function LyricsPage({ onClose, mobile, isMaximized = false, onTog
         onSelectSource={handleSelectSource}
       />
     )}
-    {mobile && toolDialog === 'appearance' && <LyricsSettings appearance={appearance} onChange={setAppearance}
+    {mobile && shown && toolDialog === 'appearance' && <LyricsSettings appearance={appearance} onChange={setAppearance}
       onClose={() => setToolDialog(null)} onChooseTrack={() => setToolDialog('track')} />}
     {showTrackPicker && <LyricsTrackPicker alternate={Boolean(alternateItem)} onClose={() => setToolDialog(null)} onSelect={item => {
       setOverride(item && item.id !== player.current?.spotifyId ? { playingKey, item } : null)
       setSource(null)
       setToolDialog(null)
     }} />}
+    {children}
   </section>
 }
 
