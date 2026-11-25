@@ -24,7 +24,11 @@
 -keep class app.tesify.desktop.PlaybackTools {
     public <init>(android.app.Activity);
     public void prepare(app.tauri.plugin.Invoke);
+    public void setBackgroundPlayback(app.tauri.plugin.Invoke);
+    public void updateMediaState(app.tauri.plugin.Invoke);
 }
+-keepclassmembers class app.tesify.desktop.BackgroundPlaybackArgs { *; }
+-keepclassmembers class app.tesify.desktop.MediaStateArgs { *; }
 
 # Commons Compress uses these constructors to unpack the embedded Python runtime.
 -keep class * implements org.apache.commons.compress.archivers.zip.ZipExtraField {

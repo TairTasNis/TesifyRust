@@ -14,7 +14,7 @@ const labels = {
 }
 
 export default function SettingsPage({ onAbout }: { onAbout?: () => void }) {
-  const { language, theme, accentEnabled, accentColor, lyricsMode, lyricsBackground } = usePreferences()
+  const { language, theme, accentEnabled, accentColor, lyricsMode, lyricsBackground, backgroundPlayback } = usePreferences()
   const t = useTranslation()
   const [title, general, languageLabel, themeLabel] = labels[language]
   const [section, setSection] = useState<'general' | 'storage' | 'developer'>('general')
@@ -48,6 +48,10 @@ export default function SettingsPage({ onAbout }: { onAbout?: () => void }) {
         <span className="settings-color"><output>{accentColor.toUpperCase()}</output><input type="color" value={accentColor}
           onChange={event => setPreferences({ accentColor: event.currentTarget.value })} /></span>
       </label>}
+      <label className="settings-row">
+        <span>{t('Фоновое воспроизведение')}</span>
+        <input type="checkbox" role="switch" checked={backgroundPlayback} onChange={event => setPreferences({ backgroundPlayback: event.currentTarget.checked })} />
+      </label>
       <label className="settings-row">
         <span>{t('Фон на странице текста песни')}</span>
         <input type="checkbox" role="switch" checked={lyricsBackground} onChange={event => setPreferences({ lyricsBackground: event.currentTarget.checked })} />

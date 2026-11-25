@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { activeLineAt, lyricCues, wordProgress } from './timing.ts'
+import { activeLineAt, lyricCues, rowStaggerDelay, shouldAnimateLyricJump, wordProgress } from './timing.ts'
 
 const lines = [
   { start: 3, end: 6 }, { start: 6, end: 8 }, { start: 12, end: 15 },
@@ -50,4 +50,24 @@ test('only estimates a lead-in when the source omitted the previous line end', (
     inferred, { countdown: true, start: 6, end: 14 }, next,
   ])
   assert.equal(lyricCues([inferred, { ...next, start: 11 }], true, 0).length, 2)
+})
+
+test('animates smoothly when jumping across multiple lines in either direction', () => {
+  assert.equal(shouldAnimateLyricJump(true, false, true), false)
+  assert.equal(shouldAnimateLyricJump(false, true, true), false)
+  assert.equal(shouldAnimateLyricJump(false, false, false), false)
+  assert.equal(shouldAnimateLyricJump(false, false, true), true)
+
+  // Forward jump to line 7: rows <= 7 start immediately, following lines stagger by 45ms.
+  assert.equal(rowStaggerDelay(5, 7, 1), 0)
+  assert.equal(rowStaggerDelay(7, 7, 1), 0)
+  assert.equal(rowStaggerDelay(8, 7, 1), 45)
+  assert.equal(rowStaggerDelay(12, 7, 1), 225)
+  assert.equal(rowStaggerDelay(20, 7, 1), 225)
+
+  // Backward jump to line 5: rows >= 5 move down first, earlier lines follow cleanly.
+  assert.equal(rowStaggerDelay(8, 5, -1), 0)
+  assert.equal(rowStaggerDelay(5, 5, -1), 0)
+  assert.equal(rowStaggerDelay(4, 5, -1), 45)
+  assert.equal(rowStaggerDelay(0, 5, -1), 225)
 })

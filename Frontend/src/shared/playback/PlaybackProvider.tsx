@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { errorMessage } from '../lib/backend'
 import type { Track } from '../playlists/types'
 import { usePreferences } from '../preferences/preferences'
-import { prepareTrack, prefetchTrack } from './api'
+import { prepareTrack, prefetchTrack, setBackgroundPlayback, syncMediaState } from './api'
 import type { PlaybackSource } from './api'
 import { getWaveTracks, playedSeconds, saveWaveFeedback, waveQueueId } from './wave'
 import type { WaveFeedback, WaveOptions } from './wave'
@@ -25,12 +25,16 @@ const PlaybackContext = createContext<Playback | null>(null)
 const initialVolume = () => { try { const saved = localStorage.getItem('tesify.volume'); const value = saved === null ? .7 : Number(saved); return Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : .7 } catch { return .7 } }
 
 export function PlaybackProvider({ children }: { children: ReactNode }) {
-  const { waveOptions } = usePreferences()
+  const { waveOptions, backgroundPlayback } = usePreferences()
+  const backgroundPlaybackRef = useRef(backgroundPlayback)
+  backgroundPlaybackRef.current = backgroundPlayback
   const audio = useRef<HTMLAudioElement>(null)
   const queueRef = useRef<Queue | null>(null)
   const request = useRef(0)
   const intent = useRef(false)
   const ready = useRef(false)
+  const backgroundGuardUntil = useRef(0)
+  const externalPauseAt = useRef(0)
   const lastVolume = useRef(.7)
   const prefetched = useRef<{ key: string; source: PlaybackSource | null } | null>(null)
   const prefetchAttempt = useRef('')
@@ -179,12 +183,33 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     } else element.pause()
   }, [loadWave, playAudio, start])
 
+  const syncNativeMedia = useCallback((positionSeconds?: number) => {
+    const track = queueRef.current?.tracks[queueRef.current.index] ?? null
+    const rawPos = positionSeconds ?? audio.current?.currentTime ?? 0
+    const posMs = Number.isFinite(rawPos) && rawPos > 0 ? Math.round(rawPos * 1000) : 0
+    const durSec = Number.isFinite(audio.current?.duration) && (audio.current?.duration ?? 0) > 0
+      ? audio.current!.duration
+      : (track?.durationMs ?? 0) / 1000
+    const durationMs = Number.isFinite(durSec) && durSec > 0 ? Math.round(durSec * 1000) : 0
+    void syncMediaState({
+      hasTrack: Boolean(track),
+      playing: Boolean(track && playing),
+      loading: Boolean(track && loading),
+      title: track?.title ?? '',
+      artist: track?.artist ?? '',
+      coverUrl: track?.coverUrl ?? null,
+      durationMs,
+      positionMs: posMs,
+    }).catch(() => {})
+  }, [loading, playing])
+
   const seek = useCallback((value: number) => {
     const element = audio.current
     if (!element || !ready.current || !Number.isFinite(element.duration) || element.duration <= 0) return
     const position = Math.max(0, Math.min(element.duration, value))
     element.currentTime = position; setTime(position)
-  }, [])
+    syncNativeMedia(position)
+  }, [syncNativeMedia])
 
   const advance = useCallback((skipped: boolean) => {
     const queue = queueRef.current
@@ -293,6 +318,39 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     return () => { for (const action of Object.keys(actions)) { try { navigator.mediaSession.setActionHandler(action as MediaSessionAction, null) } catch { /* Unsupported system action. */ } } }
   }, [next, previous, seek, toggle])
   useEffect(() => {
+    void setBackgroundPlayback(backgroundPlayback).catch(() => {})
+  }, [backgroundPlayback])
+  useEffect(() => {
+    syncNativeMedia()
+  }, [current?.id, duration, loading, playing, syncNativeMedia])
+  useEffect(() => {
+    const onMediaAction = (event: Event) => {
+      const detail = (event as CustomEvent<{ action?: string; positionSeconds?: number }>).detail
+      if (!detail?.action) return
+      switch (detail.action) {
+        case 'play': if (!intent.current) toggle(); break
+        case 'pause': if (intent.current) toggle(); break
+        case 'toggle': toggle(); break
+        case 'next': next(); break
+        case 'previous': previous(); break
+        case 'seek': if (typeof detail.positionSeconds === 'number') seek(detail.positionSeconds); break
+        case 'background-guard':
+          if (backgroundPlaybackRef.current) {
+            backgroundGuardUntil.current = Date.now() + 500
+            if (ready.current && audio.current && !audio.current.ended &&
+              (intent.current || Date.now() - externalPauseAt.current < 1500)) {
+              intent.current = true
+              setPlaying(true)
+              if (audio.current.paused) void playAudio(request.current)
+            }
+          }
+          break
+      }
+    }
+    window.addEventListener('tesify:media-action', onMediaAction)
+    return () => window.removeEventListener('tesify:media-action', onMediaAction)
+  }, [next, playAudio, previous, seek, toggle])
+  useEffect(() => {
     if (!('mediaSession' in navigator) || !current) return
     navigator.mediaSession.metadata = new MediaMetadata({ title: current.title, artist: current.artist, artwork: current.coverUrl ? [{ src: current.coverUrl }] : [] })
   }, [current])
@@ -318,7 +376,24 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         setPlaying(true); setLoading(false); setError(null)
       }}
       onWaiting={() => { if (ready.current && intent.current) setLoading(true) }}
-      onPause={() => { if (!intent.current) setPlaying(false) }}
+      onPause={() => {
+        if (!ready.current) return
+        if (!intent.current) {
+          setPlaying(false)
+          return
+        }
+        if (backgroundPlaybackRef.current && Date.now() < backgroundGuardUntil.current && audio.current && !audio.current.ended) {
+          window.setTimeout(() => {
+            if (ready.current && intent.current && backgroundPlaybackRef.current && audio.current?.paused && !audio.current.ended) {
+              void playAudio(request.current)
+            }
+          }, 30)
+          return
+        }
+        if (!audio.current?.ended) externalPauseAt.current = Date.now()
+        intent.current = false
+        setPlaying(false)
+      }}
       onEnded={event => { if (ready.current) { checkWaveListening(event.currentTarget, true); advance(false) } }}
       onError={() => { if (ready.current && audio.current?.error) { ready.current = false; intent.current = false; setPlaying(false); setLoading(false); setError('Не удалось загрузить аудио. Повторите попытку или включите следующий трек.') } }} />
   </PlaybackContext.Provider>

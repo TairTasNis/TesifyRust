@@ -1,6 +1,18 @@
 use crate::{
-    pages::{library::covers, playlist::commands::{import_spotify, sync_linked_playlists}},
-    shared::{playlists::models::*, services::AppServices, wave::{Feedback, Options, Profile, WaveService}},
+    pages::{
+        library::covers,
+        lyrics::{
+            fonts::{CustomLyricsFont, UploadLyricsFontInput},
+            models::LyricsCandidate,
+        },
+        playlist::commands::{import_spotify, sync_linked_playlists},
+    },
+    shared::{
+        playback::MediaStateInput,
+        playlists::models::*,
+        services::AppServices,
+        wave::{Feedback, Options, Profile, WaveService},
+    },
 };
 use axum::{
     Json, Router,
@@ -8,7 +20,7 @@ use axum::{
     http::StatusCode,
     middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{delete as delete_route, get, post},
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -39,12 +51,19 @@ pub fn router(services: AppServices) -> Router {
         .route("/spotify/playlists/{id}", get(spotify_playlist))
         .route("/playback/resolve", post(prepare_track))
         .route("/playback/prefetch", post(prefetch_track))
+        .route("/playback/background", post(background_playback))
+        .route("/playback/media-state", post(media_state))
         .route("/wave/profile", get(wave_profile))
         .route("/wave/key", post(wave_key))
         .route("/wave/tracks", post(wave_tracks))
         .route("/wave/feedback", post(wave_feedback))
         .route("/lyrics", post(track_lyrics))
-        .layer(DefaultBodyLimit::max(12 * 1024 * 1024))
+        .route("/lyrics/search", post(search_lyrics))
+        .route("/lyrics/override", post(apply_lyrics_candidate).delete(clear_lyrics_override))
+        .route("/lyrics/override/spotify", post(apply_spotify_lyrics))
+        .route("/lyrics/fonts", get(list_lyrics_fonts).post(upload_lyrics_font))
+        .route("/lyrics/fonts/{id}", delete_route(delete_lyrics_font))
+        .layer(DefaultBodyLimit::max(24 * 1024 * 1024))
         .layer(middleware::from_fn(loopback_only))
         .with_state(services)
 }
@@ -184,6 +203,77 @@ struct PlaybackInput {
 
 async fn track_lyrics(State(services): State<AppServices>, Json(input): Json<PlaybackInput>) -> ApiResult<crate::pages::lyrics::models::LyricsResponse> {
     crate::pages::lyrics::commands::get(&services, &input.playlist_id, &input.track_id, input.source.as_deref()).await.map(Json).map_err(error)
+}
+
+#[derive(Deserialize)]
+struct LyricsSearchInput {
+    query: String,
+}
+
+async fn search_lyrics(State(services): State<AppServices>, Json(input): Json<LyricsSearchInput>) -> ApiResult<Vec<LyricsCandidate>> {
+    crate::pages::lyrics::commands::search_candidates(&services, &input.query).await.map(Json).map_err(error)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ApplyCandidateInput {
+    playlist_id: String,
+    track_id: String,
+    candidate_id: String,
+}
+
+async fn apply_lyrics_candidate(State(services): State<AppServices>, Json(input): Json<ApplyCandidateInput>) -> ApiResult<crate::pages::lyrics::models::LyricsResponse> {
+    crate::pages::lyrics::commands::apply_candidate(&services, &input.playlist_id, &input.track_id, &input.candidate_id).await.map(Json).map_err(error)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ApplySpotifyLyricsInput {
+    playlist_id: String,
+    track_id: String,
+    spotify_track_id: String,
+}
+
+async fn apply_spotify_lyrics(State(services): State<AppServices>, Json(input): Json<ApplySpotifyLyricsInput>) -> ApiResult<crate::pages::lyrics::models::LyricsResponse> {
+    crate::pages::lyrics::commands::apply_spotify_track(&services, &input.playlist_id, &input.track_id, &input.spotify_track_id).await.map(Json).map_err(error)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ClearOverrideInput {
+    playlist_id: String,
+    track_id: String,
+}
+
+async fn clear_lyrics_override(State(services): State<AppServices>, Json(input): Json<ClearOverrideInput>) -> ApiResult<crate::pages::lyrics::models::LyricsResponse> {
+    crate::pages::lyrics::commands::clear_override(&services, &input.playlist_id, &input.track_id).await.map(Json).map_err(error)
+}
+
+async fn list_lyrics_fonts(State(services): State<AppServices>) -> ApiResult<Vec<CustomLyricsFont>> {
+    crate::pages::lyrics::commands::list_fonts(&services).await.map(Json).map_err(error)
+}
+
+async fn upload_lyrics_font(State(services): State<AppServices>, Json(input): Json<UploadLyricsFontInput>) -> ApiResult<CustomLyricsFont> {
+    crate::pages::lyrics::commands::upload_font(&services, input).await.map(Json).map_err(error)
+}
+
+async fn delete_lyrics_font(State(services): State<AppServices>, Path(id): Path<String>) -> ApiResult<()> {
+    crate::pages::lyrics::commands::delete_font(&services, id).await.map(Json).map_err(error)
+}
+
+#[derive(Deserialize)]
+struct BackgroundPlaybackBody {
+    enabled: bool,
+}
+
+async fn background_playback(State(services): State<AppServices>, Json(input): Json<BackgroundPlaybackBody>) -> ApiResult<()> {
+    services.playback.set_background_playback(input.enabled).await;
+    Ok(Json(()))
+}
+
+async fn media_state(State(services): State<AppServices>, Json(input): Json<MediaStateInput>) -> ApiResult<()> {
+    services.playback.sync_media_state(input).await;
+    Ok(Json(()))
 }
 
 async fn prepare_track(

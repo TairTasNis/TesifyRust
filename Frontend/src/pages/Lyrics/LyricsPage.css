@@ -49,6 +49,8 @@
 .lyrics-state p { max-width: 300px; margin: 12px 0 0; color: #ffffff80; font-size: 12px; line-height: 1.8; }
 .lyrics-state .music-loader { color: #ffffffa6; }
 .lyrics-retry, .lyrics-follow { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 15px; border: 0; border-radius: 999px; background: #ffffff19; color: #ffffffe0; font-size: 11px; font-weight: 600; cursor: pointer; transition: transform var(--motion-fast) var(--ease-out), background var(--motion-fast) ease; }
+.lyrics-state-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+.lyrics-state-actions .lyrics-retry { margin-top: 0; }
 .lyrics-retry { margin-top: 22px; }
 .lyrics-stage { position: relative; height: 100%; }
 .lyrics-viewport { position: relative; height: 100%; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; mask-image: linear-gradient(transparent, #000 9%, #000 84%, transparent 100%); }

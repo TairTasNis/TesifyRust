@@ -33,3 +33,12 @@ export function lyricCues(lines: LyricLine[], timed: boolean, offset: number): L
 export function wordProgress(time: number, start: number, end: number) {
   return Math.max(0, Math.min(1, (time - start) / Math.max(.001, end - start)))
 }
+
+export function shouldAnimateLyricJump(firstPosition: boolean, isCountdown: boolean, canAnimateNow: boolean) {
+  return !firstPosition && !isCountdown && canAnimateNow
+}
+
+export function rowStaggerDelay(index: number, lead: number, direction: 1 | -1) {
+  const distance = direction >= 0 ? Math.max(0, index - lead) : Math.max(0, lead - index)
+  return Math.min(5, distance) * 45
+}

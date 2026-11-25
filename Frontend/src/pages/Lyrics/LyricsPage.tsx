@@ -3,8 +3,6 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { CSSProperties, ReactNode } from 'react'
 import { errorMessage } from '../../shared/lib/backend'
 import { canAnimate } from '../../shared/lib/motion'
-import { catalogTracks } from '../../shared/catalog/playback'
-import type { CatalogItem } from '../../shared/catalog/types'
 import { usePlayback } from '../../shared/playback/PlaybackProvider'
 import { formatDuration } from '../../shared/playlists/format'
 import { usePreferences } from '../../shared/preferences/preferences'
@@ -14,7 +12,7 @@ import MusicLoader from '../../shared/ui/MusicLoader/MusicLoader'
 import PlaylistCover from '../../shared/ui/PlaylistCover/PlaylistCover'
 import { getLyrics } from './api'
 import LyricsBackground from './LyricsBackground'
-import { activeLineAt, lyricCues, wordProgress } from './timing'
+import { activeLineAt, lyricCues, rowStaggerDelay, shouldAnimateLyricJump, wordProgress } from './timing'
 import type { Lyrics, LyricsResponse } from './types'
 import LyricsSourcesModal from './LyricsSourcesModal'
 import LyricsTrackPicker from './LyricsTrackPicker'
@@ -38,20 +36,17 @@ export default function LyricsPage({ onClose, mobile, shown, onExited, children,
   const t = useTranslation()
   const player = usePlayback()
   const { lyricsMode, lyricsBackground } = usePreferences()
-  const { appearance, setAppearance, style } = useLyricsAppearance()
-  const playingKey = `${player.playlistId}/${player.current?.id}`
-  const [override, setOverride] = useState<{ playingKey: string; item: CatalogItem } | null>(null)
-  const alternateItem = override?.playingKey === playingKey ? override.item : null
-  const track = useMemo(() => alternateItem ? catalogTracks([alternateItem])[0] : player.current, [alternateItem, player.current])
+  const { appearance, setAppearance, style, customFonts } = useLyricsAppearance()
+  const track = player.current
   const trackId = track?.id
-  const playlistId = alternateItem ? 'spotify:lyrics' : player.playlistId
+  const playlistId = player.playlistId
   const key = `${playlistId}/${trackId}`
   const currentKey = useRef(key)
   currentKey.current = key
-  useEffect(() => { setOverride(null) }, [playingKey])
   const [result, setResult] = useState<{ key: string; response: LyricsResponse } | null>(null)
   const [error, setError] = useState<{ key: string; message: string } | null>(null)
   const [retry, setRetry] = useState(0)
+  const [overrideVersion, setOverrideVersion] = useState(0)
   const [closing, setClosing] = useState(false)
   const [sourcesFor, setSourcesFor] = useState<string | null>(null)
   const [toolDialog, setToolDialog] = useState<'appearance' | 'track' | null>(null)
@@ -137,9 +132,10 @@ export default function LyricsPage({ onClose, mobile, shown, onExited, children,
     }
   }, [trackId, playlistId, key])
 
-  if (!track) return null
+  if (!track || !playlistId) return null
   const busy = !response && !message
   const lyrics = response?.lyrics
+  const canAdjustOffset = Boolean(lyrics && lyrics.sync !== 'none')
   return <section className="lyrics-page" id="track-lyrics" aria-label={t("Текст песни «{0}»", track.title)} ref={pageRef}
     data-closing={closing || !shown || undefined} inert={!shown} style={style as CSSProperties}>
     {lyricsBackground && <LyricsBackground coverUrl={track.coverUrl} playing={player.playing && !player.loading} mobile={mobile} />}
@@ -161,7 +157,17 @@ export default function LyricsPage({ onClose, mobile, shown, onExited, children,
           aria-haspopup="dialog" onClick={() => setToolDialog('appearance')}><Icon name="settings" /></button>}
       </div>
     </header>
-    {!mobile && <LyricsToolbar appearance={appearance} onChange={setAppearance} onChooseTrack={() => setToolDialog('track')} />}
+    {!mobile && (
+      <LyricsToolbar
+        appearance={appearance}
+        onChange={setAppearance}
+        onChooseTrack={() => setToolDialog('track')}
+        offset={offset}
+        onOffsetChange={handleOffsetChange}
+        canAdjustOffset={canAdjustOffset}
+        customFonts={customFonts}
+      />
+    )}
     <div className="lyrics-layout" data-cover={appearance.showCover}>
       {appearance.showCover && <div className="lyrics-now-playing" key={track.id}>
         <PlaylistCover url={track.coverUrl} name={t("Обложка: {0}", track.title)} className="lyrics-cover" />
@@ -181,12 +187,15 @@ export default function LyricsPage({ onClose, mobile, shown, onExited, children,
       </div>}
       <div className="lyrics-reading" aria-busy={busy}>
         {busy ? <div className="lyrics-state" role="status"><MusicLoader variant="compact" label={t("Ищем текст песни")} /><h2>{t("Ищем текст песни")}</h2></div>
-          : lyrics ? <LyricStage key={requestKey} lyrics={lyrics} offset={offset} mode={lyricsMode} mobile={mobile} followPlayback={!alternateItem} />
+          : lyrics ? <LyricStage key={`${requestKey}/${overrideVersion}`} lyrics={lyrics} offset={offset} mode={lyricsMode} mobile={mobile} followPlayback />
           : <div className="lyrics-state" role="status"><Icon name="lyrics" /><h2>{response?.status === 'instrumental' ? t("Только музыка") : response?.status === 'unavailable' || message ? t("Не удалось загрузить текст") : t("Текст пока не найден")}</h2>
             <p>{message ? t(message) : response?.status === 'instrumental' ? t("У этой композиции нет слов") : response?.status === 'unavailable' ? t("Сервисы текста сейчас недоступны. Попробуйте ещё раз.") : t("В подключённых источниках нет текста этой песни")}</p>
-            {response?.status !== 'instrumental' && <button className="lyrics-retry" onClick={() => {
-              setResult(null); setError(null); setRetry(n => n + 1)
-            }}>{t("Попробовать ещё раз")}</button>}
+            <div className="lyrics-state-actions">
+              {response?.status !== 'instrumental' && <button className="lyrics-retry" onClick={() => {
+                setResult(null); setError(null); setRetry(n => n + 1)
+              }}>{t("Попробовать ещё раз")}</button>}
+              <button className="lyrics-retry" onClick={() => setToolDialog('track')}>{t("Найти вручную")}</button>
+            </div>
           </div>}
       </div>
     </div>
@@ -195,27 +204,52 @@ export default function LyricsPage({ onClose, mobile, shown, onExited, children,
         currentLyrics={lyrics}
         onClose={() => setSourcesFor(null)}
         offset={offset}
-        onOffsetChange={alternateItem ? undefined : handleOffsetChange}
+        onOffsetChange={handleOffsetChange}
         onSelectSource={handleSelectSource}
       />
     )}
-    {mobile && shown && toolDialog === 'appearance' && <LyricsSettings appearance={appearance} onChange={setAppearance}
-      onClose={() => setToolDialog(null)} onChooseTrack={() => setToolDialog('track')} />}
-    {showTrackPicker && <LyricsTrackPicker alternate={Boolean(alternateItem)} onClose={() => setToolDialog(null)} onSelect={item => {
-      setOverride(item && item.id !== player.current?.spotifyId ? { playingKey, item } : null)
-      setSource(null)
-      setToolDialog(null)
-    }} />}
+    {mobile && shown && toolDialog === 'appearance' && (
+      <LyricsSettings
+        appearance={appearance}
+        onChange={setAppearance}
+        onClose={() => setToolDialog(null)}
+        onChooseTrack={() => setToolDialog('track')}
+        offset={offset}
+        onOffsetChange={handleOffsetChange}
+        canAdjustOffset={canAdjustOffset}
+        customFonts={customFonts}
+      />
+    )}
+    {showTrackPicker && (
+      <LyricsTrackPicker
+        track={track}
+        playlistId={playlistId}
+        hasCustomOverride={Boolean(response?.custom)}
+        onClose={() => setToolDialog(null)}
+        onApplied={(applied) => {
+          setSource(null)
+          setError(null)
+          setResult({ key: `${key}/auto`, response: applied })
+          setOverrideVersion(n => n + 1)
+        }}
+      />
+    )}
     {children}
   </section>
 }
 
-function moveRows(rows: (HTMLElement | null)[], offset: number | null, mobile: boolean, lead?: number) {
-  // The current line starts first. Each of the next five starts 45 ms after the previous one.
+function moveRows(
+  rows: (HTMLElement | null)[],
+  offset: number | null,
+  mobile: boolean,
+  lead?: number,
+  direction: 1 | -1 = 1,
+) {
+  // The active line moves first. Neighboring lines follow with a 45 ms stagger.
   const transform = offset === null ? 'none' : mobile ? `translateY(${offset}px)` : `translate3d(0, ${offset}px, 0)`
   rows.forEach((row, index) => {
     if (!row) return
-    row.style.transitionDelay = lead === undefined ? '0ms' : `${Math.min(5, Math.max(0, index - lead)) * 45}ms`
+    row.style.transitionDelay = lead === undefined ? '0ms' : `${rowStaggerDelay(index, lead, direction)}ms`
     row.style.transitionDuration = lead === undefined ? '0ms' : ''
     row.style.transform = transform
   })
@@ -244,10 +278,9 @@ function LyricStage({ lyrics, offset, mode, mobile, followPlayback }: {
   })
   const [browsing, setBrowsing] = useState(false)
   const browsingRef = useRef(false)
-  const resumingFollow = useRef(false)
   const [size, setSize] = useState(0)
   const browseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const previousActive = useRef(active)
+  const previousOffset = useRef<number | null>(null)
   const firstPosition = useRef(true)
   const playback = useRef(player)
   const oldScroll = useRef(0)
@@ -328,13 +361,13 @@ function LyricStage({ lyrics, offset, mode, mobile, followPlayback }: {
     const target = mobile
       ? current.offsetTop - Math.max(8, Math.min(view.clientHeight * .33, view.clientHeight - current.offsetHeight - 8))
       : current.offsetTop - view.clientHeight * .32
-    const delta = active - previousActive.current
+    const nextOffset = -target
+    const direction: 1 | -1 = previousOffset.current !== null && nextOffset > previousOffset.current ? -1 : 1
     const cue = cues[active]
-    const smooth = !firstPosition.current && !(cue && 'countdown' in cue) && (resumingFollow.current || Math.abs(delta) <= 1) && canAnimate()
-    moveRows(rows.current, -target, mobile, smooth ? active : undefined)
+    const smooth = shouldAnimateLyricJump(firstPosition.current, Boolean(cue && 'countdown' in cue), canAnimate())
+    moveRows(rows.current, nextOffset, mobile, smooth ? active : undefined, direction)
     firstPosition.current = false
-    resumingFollow.current = false
-    previousActive.current = active
+    previousOffset.current = nextOffset
   }, [active, browsing, cues, mobile, size, timed])
 
   useEffect(() => () => { if (browseTimer.current) clearTimeout(browseTimer.current) }, [])
@@ -366,6 +399,7 @@ function LyricStage({ lyrics, offset, mode, mobile, followPlayback }: {
     if (view) {
       const scroll = view.scrollTop
       moveRows(rows.current, -scroll, mobile)
+      previousOffset.current = -scroll
       view.scrollTop = 0
       view.style.overflowY = 'hidden'
       // Commit the manual position before returning to the current phrase.
@@ -374,13 +408,13 @@ function LyricStage({ lyrics, offset, mode, mobile, followPlayback }: {
     }
     firstPosition.current = false
     browsingRef.current = false
-    resumingFollow.current = true
     setBrowsing(false)
   }
 
   function seekLine(index: number) {
     if (!timed || player.error || player.duration <= 0) return
-    player.seek(Math.max(0, cues[index].start + offset))
+    const targetTime = Math.min(player.duration, Math.max(0, cues[index].start + offset + 0.005))
+    player.seek(targetTime)
     if (!mobile) setCue({ index, seconds: 0 })
     if (browsingRef.current) follow()
   }

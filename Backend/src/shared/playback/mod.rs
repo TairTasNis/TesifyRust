@@ -13,7 +13,7 @@ use self::{
     play_engine::{AudioSource, PlayEngine, VideoMatch},
 };
 use crate::shared::playlists::models::Track;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     path::PathBuf,
@@ -24,6 +24,19 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::sync::{Mutex as AsyncMutex, Semaphore};
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaStateInput {
+    pub has_track: bool,
+    pub playing: bool,
+    pub loading: bool,
+    pub title: String,
+    pub artist: String,
+    pub cover_url: Option<String>,
+    pub duration_ms: u64,
+    pub position_ms: u64,
+}
 
 #[derive(Clone)]
 pub(super) struct SourceEntry {
@@ -57,6 +70,8 @@ pub struct PlaybackService {
     intro_cache: IntroCache,
     workers: Arc<Semaphore>,
     origin: String,
+    background_playback: AtomicBool,
+    active_playing: AtomicBool,
 }
 
 impl PlaybackService {
@@ -85,6 +100,8 @@ impl PlaybackService {
             intro_cache: IntroCache::new(cache_dir),
             workers: Arc::new(Semaphore::new(2)),
             origin: format!("http://127.0.0.1:{port}"),
+            background_playback: AtomicBool::new(true),
+            active_playing: AtomicBool::new(false),
         });
         let state = service.clone();
         tauri::async_runtime::spawn(async move {
@@ -400,6 +417,27 @@ impl PlaybackService {
             }
         }
         Ok(source)
+    }
+
+    pub fn background_playback_enabled(&self) -> bool {
+        self.background_playback.load(Ordering::Relaxed)
+    }
+
+    pub fn is_playing(&self) -> bool {
+        self.active_playing.load(Ordering::Relaxed)
+    }
+
+    pub async fn set_background_playback(&self, enabled: bool) {
+        self.background_playback.store(enabled, Ordering::Relaxed);
+        #[cfg(target_os = "android")]
+        self.android_tools.set_background_playback(enabled).await;
+    }
+
+    pub async fn sync_media_state(&self, state: MediaStateInput) {
+        self.active_playing
+            .store(state.has_track && state.playing, Ordering::Relaxed);
+        #[cfg(target_os = "android")]
+        self.android_tools.update_media_state(&state).await;
     }
 
     async fn engine(&self) -> Result<PlayEngine, String> {

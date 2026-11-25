@@ -13,8 +13,35 @@ import androidx.activity.enableEdgeToEdge
 import androidx.annotation.RequiresApi
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import java.lang.ref.WeakReference
 
 class MainActivity : TauriActivity() {
+  companion object {
+    @Volatile
+    var backgroundPlaybackEnabled: Boolean = true
+
+    @Volatile
+    var hasActiveTrack: Boolean = false
+
+    @Volatile
+    var mediaPlaying: Boolean = false
+
+    @Volatile
+    private var webViewRef: WeakReference<WebView>? = null
+
+    fun dispatchMediaAction(action: String, positionSeconds: Double? = null) {
+      val webView = webViewRef?.get() ?: return
+      val detail = if (positionSeconds != null) {
+        "{action:'$action',positionSeconds:$positionSeconds}"
+      } else {
+        "{action:'$action'}"
+      }
+      webView.post {
+        webView.evaluateJavascript("window.dispatchEvent(new CustomEvent('tesify:media-action',{detail:$detail}))", null)
+      }
+    }
+  }
+
   private var contentWebView: WebView? = null
   private var predictiveBack: OnBackAnimationCallback? = null
 
@@ -30,7 +57,6 @@ class MainActivity : TauriActivity() {
       WindowInsetsCompat.CONSUMED
     }
     ViewCompat.requestApplyInsets(content)
-
   }
 
   private fun handleBack(fallback: () -> Unit) {
@@ -108,12 +134,38 @@ class MainActivity : TauriActivity() {
       predictiveBack?.let { onBackInvokedDispatcher.unregisterOnBackInvokedCallback(it) }
       predictiveBack = null
     } else overlayBack.remove()
+    val keepBackground = backgroundPlaybackEnabled && mediaPlaying
     super.onPause()
+    // Keep WebView media active in the background when background playback is enabled.
+    if (backgroundPlaybackEnabled && (mediaPlaying || hasActiveTrack)) {
+      contentWebView?.onResume()
+    }
+    if (keepBackground) {
+      dispatchMediaAction("background-guard")
+    }
+  }
+
+  override fun onStop() {
+    super.onStop()
+    if (!backgroundPlaybackEnabled) {
+      if (mediaPlaying) {
+        dispatchMediaAction("pause")
+      }
+      PlaybackMediaService.stop(applicationContext)
+    }
+  }
+
+  override fun onDestroy() {
+    if (isFinishing) {
+      PlaybackMediaService.stop(applicationContext)
+    }
+    super.onDestroy()
   }
 
   override fun onWebViewCreate(webView: WebView) {
     super.onWebViewCreate(webView)
     contentWebView = webView
+    webViewRef = WeakReference(webView)
     // A tap first resolves an audio URL in Rust, then starts the media element.
     webView.settings.mediaPlaybackRequiresUserGesture = false
     webView.post { preferSmoothWebViewMotion(webView) }

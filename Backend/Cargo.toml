@@ -1,6 +1,6 @@
 [package]
 name = "tesify"
-version = "26.11.0-dev.14"
+version = "26.11.0-dev.15"
 description = "Tesify music and playlists"
 edition = "2024"
 rust-version = "1.95"
@@ -15,7 +15,7 @@ tauri-build = { version = "=3.0.0-alpha.4", features = [] }
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
-tauri = { version = "=3.0.0-alpha.5", features = [] }
+tauri = { version = "=3.0.0-alpha.5", features = ["tray-icon"] }
 tauri-runtime-wry = { version = "=3.0.0-alpha.5" }
 axum = { version = "0.8", features = ["json"] }
 base64 = "0.22"

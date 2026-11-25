@@ -18,6 +18,17 @@ pub fn key(fields: (&str, &str, &str, i64, Option<&str>)) -> String {
     format!("{:x}", Sha256::digest(input))
 }
 
+pub fn override_key(fields: (&str, &str, &str, i64)) -> String {
+    let input = serde_json::to_vec(&("override-v1", fields))
+        .expect("lyrics override key fields are serializable");
+    format!("{:x}", Sha256::digest(input))
+}
+
+pub async fn remove(directory: PathBuf, key: &str) {
+    let path = directory.join(format!("{key}.json"));
+    let _ = spawn_blocking(move || fs::remove_file(path)).await;
+}
+
 pub async fn read(directory: PathBuf, key: &str) -> Option<LyricsResponse> {
     let path = directory.join(format!("{key}.json"));
     spawn_blocking(move || {
@@ -89,7 +100,7 @@ mod tests {
         let selected = key(("spotify-id", "Song", "Artist", 16_000, None));
         let other = key(("spotify-id", "Song", "Artist", 22_000, None));
         let lyrics = parse::document(parse::lrc("[00:03]First line\n[00:08]Second line"), "test", "", 16.0);
-        write(directory.clone(), &selected, LyricsResponse { status: "found".into(), lyrics }).await;
+        write(directory.clone(), &selected, LyricsResponse { status: "found".into(), lyrics, custom: false }).await;
         let saved = read(directory.clone(), &selected).await.unwrap().lyrics.unwrap();
         assert_eq!(saved.lines[1].text, "Second line");
         assert!(read(directory.clone(), &other).await.is_none());

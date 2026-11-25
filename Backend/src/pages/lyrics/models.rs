@@ -36,4 +36,19 @@ pub struct Lyrics {
 pub struct LyricsResponse {
     pub status: String,
     pub lyrics: Option<Lyrics>,
+    #[serde(default)]
+    pub custom: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LyricsCandidate {
+    pub id: String,
+    pub title: String,
+    pub artist: String,
+    pub album: Option<String>,
+    pub duration_ms: Option<i64>,
+    pub source: String,
+    pub sync: String,
+    pub preview: Option<String>,
 }

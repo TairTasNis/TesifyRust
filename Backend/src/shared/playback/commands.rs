@@ -1,4 +1,4 @@
-use super::PlaybackSource;
+use super::{MediaStateInput, PlaybackSource};
 use crate::shared::services::AppServices;
 use tauri::State;
 
@@ -52,4 +52,22 @@ pub async fn prepare_track(
     track_id: String,
 ) -> Result<PlaybackSource, String> {
     prepare(&services, &playlist_id, &track_id).await
+}
+
+#[tauri::command]
+pub async fn set_background_playback(
+    services: State<'_, AppServices>,
+    enabled: bool,
+) -> Result<(), String> {
+    services.playback.set_background_playback(enabled).await;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn sync_media_state(
+    services: State<'_, AppServices>,
+    state: MediaStateInput,
+) -> Result<(), String> {
+    services.playback.sync_media_state(state).await;
+    Ok(())
 }

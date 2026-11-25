@@ -867,6 +867,303 @@ fn extract_json_metadata(value: &Value) -> (Option<String>, Option<String>, Opti
     (artist, title, duration)
 }
 
+#[derive(Clone)]
+pub enum CandidatePayload {
+    Ready(Lyrics),
+    NetEase { id: u64, duration_ms: Option<f64> },
+    Kugou { id: String, accesskey: String, duration_ms: Option<f64> },
+}
+
+#[derive(Clone)]
+pub struct SearchCandidate {
+    pub info: super::models::LyricsCandidate,
+    pub payload: CandidatePayload,
+}
+
+fn preview_lines(lyrics: &Lyrics) -> Option<String> {
+    let lines: Vec<&str> = lyrics
+        .lines
+        .iter()
+        .map(|l| l.text.trim())
+        .filter(|t| !t.is_empty())
+        .take(2)
+        .collect();
+    (!lines.is_empty()).then(|| lines.join(" / "))
+}
+
+async fn search_lrclib_candidates(
+    client: &Client,
+    query_str: &str,
+    base: &str,
+    source: &str,
+    url: &str,
+) -> Vec<SearchCandidate> {
+    let q = vec![("q".into(), query_str.to_string())];
+    let Ok(Some(body)) = text(client, &format!("{base}/search"), &q, None).await else {
+        return Vec::new();
+    };
+    let Ok(value) = serde_json::from_str::<Value>(&body) else {
+        return Vec::new();
+    };
+    let Some(items) = value.as_array() else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for item in items.iter().take(15) {
+        if item["instrumental"].as_bool() == Some(true) {
+            continue;
+        }
+        let title = item["trackName"].as_str().unwrap_or("").trim();
+        let artist = item["artistName"].as_str().unwrap_or("").trim();
+        if title.is_empty() {
+            continue;
+        }
+        let duration_sec = item["duration"].as_f64().filter(|d| *d > 0.0 && d.is_finite());
+        let Some(doc) = parse::document(
+            parse::json(item),
+            source,
+            url,
+            duration_sec.unwrap_or(0.0),
+        ) else {
+            continue;
+        };
+        let album = item["albumName"]
+            .as_str()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+        let duration_ms = duration_sec.map(|d| (d * 1000.0).round() as i64);
+        out.push(SearchCandidate {
+            info: super::models::LyricsCandidate {
+                id: uuid::Uuid::new_v4().to_string(),
+                title: title.to_string(),
+                artist: artist.to_string(),
+                album,
+                duration_ms,
+                source: source.to_string(),
+                sync: doc.sync.clone(),
+                preview: preview_lines(&doc),
+            },
+            payload: CandidatePayload::Ready(doc),
+        });
+    }
+    out
+}
+
+async fn search_netease_candidates(client: &Client, query_str: &str) -> Vec<SearchCandidate> {
+    let q = vec![
+        ("s".into(), query_str.to_string()),
+        ("type".into(), "1".into()),
+        ("limit".into(), "10".into()),
+    ];
+    let Ok(Some(body)) = text(client, "https://music.163.com/api/search/pc", &q, None).await else {
+        return Vec::new();
+    };
+    let Ok(value) = serde_json::from_str::<Value>(&body) else {
+        return Vec::new();
+    };
+    let Some(songs) = value.pointer("/result/songs").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    songs
+        .iter()
+        .take(10)
+        .filter_map(|song| {
+            let id = song["id"].as_u64()?;
+            let title = song["name"].as_str()?.trim();
+            if title.is_empty() {
+                return None;
+            }
+            let artist = song["artists"]
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|item| item["name"].as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .unwrap_or_default();
+            let album = song
+                .pointer("/album/name")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string);
+            let duration_ms = song["duration"].as_f64().filter(|d| *d > 0.0 && d.is_finite());
+            Some(SearchCandidate {
+                info: super::models::LyricsCandidate {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    title: title.to_string(),
+                    artist,
+                    album,
+                    duration_ms: duration_ms.map(|d| d.round() as i64),
+                    source: "NetEase Cloud Music".to_string(),
+                    sync: "auto".to_string(),
+                    preview: None,
+                },
+                payload: CandidatePayload::NetEase { id, duration_ms },
+            })
+        })
+        .collect()
+}
+
+async fn search_kugou_candidates(client: &Client, query_str: &str) -> Vec<SearchCandidate> {
+    let q = vec![
+        ("ver".into(), "1".into()),
+        ("man".into(), "yes".into()),
+        ("client".into(), "mobi".into()),
+        ("keyword".into(), query_str.to_string()),
+    ];
+    let Ok(Some(body)) = text(client, "https://lyrics.kugou.com/search", &q, None).await else {
+        return Vec::new();
+    };
+    let Ok(value) = serde_json::from_str::<Value>(&body) else {
+        return Vec::new();
+    };
+    let Some(candidates) = value["candidates"].as_array() else {
+        return Vec::new();
+    };
+    candidates
+        .iter()
+        .filter(|c| c["product_from"] != "ugc")
+        .take(8)
+        .filter_map(|c| {
+            let id = c["id"]
+                .as_str()
+                .map(str::to_string)
+                .or_else(|| c["id"].as_u64().map(|n| n.to_string()))?;
+            let accesskey = c["accesskey"].as_str()?.to_string();
+            let title = c["song"].as_str().unwrap_or("").trim();
+            let artist = c["singer"].as_str().unwrap_or("").trim();
+            if title.is_empty() {
+                return None;
+            }
+            let duration_ms = c["duration"].as_f64().filter(|d| *d > 0.0 && d.is_finite());
+            Some(SearchCandidate {
+                info: super::models::LyricsCandidate {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    title: title.to_string(),
+                    artist: artist.to_string(),
+                    album: None,
+                    duration_ms: duration_ms.map(|d| d.round() as i64),
+                    source: "Kugou Music".to_string(),
+                    sync: "word".to_string(),
+                    preview: None,
+                },
+                payload: CandidatePayload::Kugou {
+                    id,
+                    accesskey,
+                    duration_ms,
+                },
+            })
+        })
+        .collect()
+}
+
+pub async fn search_candidates(client: &Client, query_str: &str) -> Vec<SearchCandidate> {
+    let query_str = query_str.trim();
+    if query_str.is_empty() {
+        return Vec::new();
+    }
+    let (lrclib_res, amll_res, netease_res, kugou_res) = tokio::join!(
+        search_lrclib_candidates(
+            client,
+            query_str,
+            "https://lrclib.net/api",
+            "LRCLIB",
+            "https://lrclib.net"
+        ),
+        search_lrclib_candidates(
+            client,
+            query_str,
+            "https://api.amll.dev/v1/lrclib",
+            "AMLL TTML Database",
+            "https://github.com/amll-dev/amll-ttml-db"
+        ),
+        search_netease_candidates(client, query_str),
+        search_kugou_candidates(client, query_str),
+    );
+    let mut all = Vec::new();
+    all.extend(lrclib_res);
+    all.extend(amll_res);
+    all.extend(netease_res);
+    all.extend(kugou_res);
+    all.sort_by_key(|c| match c.info.sync.as_str() {
+        "word" => 0_u8,
+        "line" => 1,
+        "auto" => 2,
+        _ => 3,
+    });
+    all.truncate(40);
+    all
+}
+
+pub async fn resolve_candidate(client: &Client, payload: CandidatePayload) -> Result<Lyrics, String> {
+    match payload {
+        CandidatePayload::Ready(lyrics) => Ok(lyrics),
+        CandidatePayload::NetEase { id, duration_ms } => {
+            let q = vec![
+                ("id".into(), id.to_string()),
+                ("lv".into(), "-1".into()),
+                ("yv".into(), "-1".into()),
+                ("kv".into(), "-1".into()),
+            ];
+            let body = text(client, "https://music.163.com/api/song/lyric", &q, None)
+                .await
+                .map_err(|_| "Не удалось загрузить текст с NetEase.".to_string())?
+                .ok_or_else(|| "У выбранной записи NetEase нет текста.".to_string())?;
+            let v: Value = serde_json::from_str(&body)
+                .map_err(|_| "Не удалось разобрать ответ NetEase.".to_string())?;
+            let dur = duration_ms.unwrap_or(0.0) / 1000.0;
+            if let Some(yrc) = v.pointer("/yrc/lyric").and_then(Value::as_str) {
+                if let Some(doc) = parse::document(
+                    parse::karaoke(yrc, false),
+                    "NetEase Cloud Music",
+                    "https://music.163.com",
+                    dur,
+                ) {
+                    return Ok(doc);
+                }
+            }
+            let lines = parse::json(&v);
+            parse::document(lines, "NetEase Cloud Music", "https://music.163.com", dur)
+                .ok_or_else(|| "У выбранной записи NetEase нет текста.".to_string())
+        }
+        CandidatePayload::Kugou {
+            id,
+            accesskey,
+            duration_ms,
+        } => {
+            let q = vec![
+                ("ver".into(), "1".into()),
+                ("client".into(), "pc".into()),
+                ("id".into(), id),
+                ("accesskey".into(), accesskey),
+                ("fmt".into(), "krc".into()),
+                ("charset".into(), "utf8".into()),
+            ];
+            let body = text(client, "https://lyrics.kugou.com/download", &q, None)
+                .await
+                .map_err(|_| "Не удалось загрузить текст с Kugou.".to_string())?
+                .ok_or_else(|| "У выбранной записи Kugou нет текста.".to_string())?;
+            let v: Value = serde_json::from_str(&body)
+                .map_err(|_| "Не удалось разобрать ответ Kugou.".to_string())?;
+            let raw = v["content"]
+                .as_str()
+                .and_then(parse::decode_krc)
+                .ok_or_else(|| "У выбранной записи Kugou нет текста.".to_string())?;
+            let dur = duration_ms.unwrap_or(0.0) / 1000.0;
+            parse::document(
+                parse::karaoke(&raw, true),
+                "Kugou Music",
+                "https://www.kugou.com",
+                dur,
+            )
+            .ok_or_else(|| "У выбранной записи Kugou нет текста.".to_string())
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

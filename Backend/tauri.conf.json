@@ -1,7 +1,7 @@
 {
   "$schema": "../Frontend/node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Tesify",
-  "version": "26.11.0-dev.14",
+  "version": "26.11.0-dev.15",
   "identifier": "app.tesify.desktop",
   "build": {
     "frontendDist": "../Frontend/dist",
@@ -28,7 +28,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data: blob: https://i.ibb.co https://i.scdn.co https://t.scdn.co https://*.spotifycdn.com https://mosaic.scdn.co; font-src 'self'; connect-src ipc: http://ipc.localhost; media-src 'self' http://127.0.0.1:*"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data: blob: https://i.ibb.co https://i.scdn.co https://t.scdn.co https://*.spotifycdn.com https://mosaic.scdn.co; font-src 'self' data: blob:; connect-src ipc: http://ipc.localhost; media-src 'self' http://127.0.0.1:*"
     }
   },
   "bundle": {

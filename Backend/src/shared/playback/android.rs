@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{path::PathBuf, sync::Arc};
 use tauri::{
     DynRuntime, Manager,
@@ -16,6 +16,12 @@ pub(super) struct AndroidRuntime {
     pub cache_dir: PathBuf,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BackgroundPlaybackArgs {
+    enabled: bool,
+}
+
 #[derive(Clone)]
 pub struct AndroidTools {
     plugin: PluginHandle<DynRuntime>,
@@ -30,6 +36,29 @@ impl AndroidTools {
                 "Не удалось запустить модуль воспроизведения на Android.".into()
             })
         }).await
+    }
+
+    pub(super) async fn set_background_playback(&self, enabled: bool) {
+        if let Err(error) = self
+            .plugin
+            .run_mobile_plugin_async::<serde_json::Value>(
+                "setBackgroundPlayback",
+                BackgroundPlaybackArgs { enabled },
+            )
+            .await
+        {
+            eprintln!("Android background playback: {error}");
+        }
+    }
+
+    pub(super) async fn update_media_state(&self, state: &super::MediaStateInput) {
+        if let Err(error) = self
+            .plugin
+            .run_mobile_plugin_async::<serde_json::Value>("updateMediaState", state)
+            .await
+        {
+            eprintln!("Android media state: {error}");
+        }
     }
 }
 

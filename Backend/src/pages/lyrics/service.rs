@@ -1,12 +1,13 @@
 use super::{
     cache,
-    models::{Lyrics, LyricsResponse},
-    providers::{self, Outcome, Settings},
+    fonts::LyricsFontStore,
+    models::{Lyrics, LyricsCandidate, LyricsResponse},
+    providers::{self, CandidatePayload, Outcome, Settings},
 };
 use crate::shared::playlists::models::Track;
 use futures_util::{StreamExt, stream::FuturesUnordered};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     future::Future,
     path::PathBuf,
     pin::Pin,
@@ -59,22 +60,57 @@ struct Cached {
     response: LyricsResponse,
     expires: Instant,
 }
+
+#[derive(Default)]
+struct CandidateStore {
+    entries: HashMap<String, CandidatePayload>,
+    order: VecDeque<String>,
+}
+
+impl CandidateStore {
+    fn insert(&mut self, id: String, payload: CandidatePayload) {
+        if self.entries.len() >= 256 {
+            while self.entries.len() >= 200 {
+                if let Some(old) = self.order.pop_front() {
+                    self.entries.remove(&old);
+                } else {
+                    break;
+                }
+            }
+        }
+        self.order.push_back(id.clone());
+        self.entries.insert(id, payload);
+    }
+
+    fn get(&self, id: &str) -> Option<CandidatePayload> {
+        self.entries.get(id).cloned()
+    }
+}
+
 pub struct LyricsService {
     client: reqwest::Client,
     settings: Settings,
     cache: Mutex<HashMap<String, Cached>>,
+    candidates: Mutex<CandidateStore>,
     directory: PathBuf,
+    pub fonts: LyricsFontStore,
     flights: [Mutex<()>; 32],
     slots: Semaphore,
 }
 
 impl LyricsService {
     pub fn with_cache(client: reqwest::Client, settings: Settings, directory: PathBuf) -> Arc<Self> {
+        let fonts_dir = directory
+            .parent()
+            .unwrap_or(&directory)
+            .join("lyrics-fonts-v1");
         Arc::new(Self {
             client,
             settings,
             cache: Mutex::new(HashMap::new()),
+            candidates: Mutex::new(CandidateStore::default()),
             directory,
+            fonts: LyricsFontStore::new(fonts_dir),
             flights: std::array::from_fn(|_| Mutex::new(())),
             slots: Semaphore::new(2),
         })
@@ -84,8 +120,39 @@ impl LyricsService {
         self.get_from(track, None).await
     }
 
+    fn override_cache_key(track: &Track) -> String {
+        cache::override_key((
+            &track.spotify_id,
+            &track.title,
+            &track.artist,
+            track.duration_ms.unwrap_or(0),
+        ))
+    }
+
     pub async fn get_from(&self, track: &Track, requested_source: Option<&str>) -> LyricsResponse {
         let requested_source = requested_source.map(|source| source.trim().to_ascii_lowercase());
+        if requested_source.is_none() {
+            let ovr_key = Self::override_cache_key(track);
+            let stripe = usize::from_str_radix(&ovr_key[..2], 16).expect("hex digest") % self.flights.len();
+            let _flight = self.flights[stripe].lock().await;
+            if let Some(cached) = self
+                .cache
+                .lock()
+                .await
+                .get(&ovr_key)
+                .filter(|c| c.expires > Instant::now())
+            {
+                let mut res = cached.response.clone();
+                res.custom = true;
+                return res;
+            }
+            if let Some(mut response) = cache::read(self.directory.clone(), &ovr_key).await {
+                response.custom = true;
+                self.remember(ovr_key, &response).await;
+                return response;
+            }
+        }
+
         let key = cache::key((
             &track.spotify_id,
             &track.title,
@@ -109,7 +176,7 @@ impl LyricsService {
             return response;
         }
         let Ok(_slot) = self.slots.acquire().await else {
-            return LyricsResponse { status: "unavailable".into(), lyrics: None };
+            return LyricsResponse { status: "unavailable".into(), lyrics: None, custom: false };
         };
 
         let client = &self.client;
@@ -133,18 +200,22 @@ impl LyricsService {
                 Outcome::Found(doc) => LyricsResponse {
                     status: "found".into(),
                     lyrics: Some(doc),
+                    custom: false,
                 },
                 Outcome::Instrumental => LyricsResponse {
                     status: "instrumental".into(),
                     lyrics: None,
+                    custom: false,
                 },
                 Outcome::Failed => LyricsResponse {
                     status: "unavailable".into(),
                     lyrics: None,
+                    custom: false,
                 },
                 Outcome::Miss => LyricsResponse {
                     status: "not_found".into(),
                     lyrics: None,
+                    custom: false,
                 },
             };
 
@@ -152,6 +223,14 @@ impl LyricsService {
             return response;
         }
 
+        let response = self.fetch_best(track).await;
+        self.store(key, &response).await;
+        response
+    }
+
+    async fn fetch_best(&self, track: &Track) -> LyricsResponse {
+        let client = &self.client;
+        let settings = &self.settings;
         let mut requests: FuturesUnordered<Pin<Box<dyn Future<Output = Outcome> + Send + '_>>> =
             FuturesUnordered::new();
         requests.push(Box::pin(providers::lyricsplus(client, track, settings)));
@@ -206,12 +285,71 @@ impl LyricsService {
         } else {
             "not_found"
         };
-        let response = LyricsResponse {
+        LyricsResponse {
             status: status.into(),
             lyrics: best,
+            custom: false,
+        }
+    }
+
+    pub async fn search_candidates(&self, query: &str) -> Vec<LyricsCandidate> {
+        let results = providers::search_candidates(&self.client, query).await;
+        let mut store = self.candidates.lock().await;
+        let mut out = Vec::with_capacity(results.len());
+        for item in results {
+            store.insert(item.info.id.clone(), item.payload);
+            out.push(item.info);
+        }
+        out
+    }
+
+    pub async fn apply_candidate(&self, track: &Track, candidate_id: &str) -> Result<LyricsResponse, String> {
+        let payload = self
+            .candidates
+            .lock()
+            .await
+            .get(candidate_id)
+            .ok_or_else(|| "Результат поиска устарел. Повторите поиск.".to_string())?;
+        let lyrics = providers::resolve_candidate(&self.client, payload).await?;
+        let response = self.save_override(track, lyrics).await;
+        Ok(response)
+    }
+
+    pub async fn apply_from_other_track(
+        &self,
+        target: &Track,
+        source_track: &Track,
+    ) -> Result<LyricsResponse, String> {
+        let fetched = self.get_from(source_track, None).await;
+        let Some(lyrics) = fetched.lyrics.filter(|_| fetched.status == "found") else {
+            return Err(match fetched.status.as_str() {
+                "instrumental" => "У выбранной песни нет слов (инструментал).".into(),
+                "unavailable" => "Источники текста сейчас недоступны. Попробуйте ещё раз.".into(),
+                _ => "Для выбранной песни не удалось найти текст.".into(),
+            });
         };
-        self.store(key, &response).await;
+        Ok(self.save_override(target, lyrics).await)
+    }
+
+    pub async fn save_override(&self, track: &Track, lyrics: Lyrics) -> LyricsResponse {
+        let ovr_key = Self::override_cache_key(track);
+        let stripe = usize::from_str_radix(&ovr_key[..2], 16).expect("hex digest") % self.flights.len();
+        let _flight = self.flights[stripe].lock().await;
+        let response = LyricsResponse {
+            status: "found".into(),
+            lyrics: Some(lyrics),
+            custom: true,
+        };
+        self.store(ovr_key, &response).await;
         response
+    }
+
+    pub async fn clear_override(&self, track: &Track) {
+        let ovr_key = Self::override_cache_key(track);
+        let stripe = usize::from_str_radix(&ovr_key[..2], 16).expect("hex digest") % self.flights.len();
+        let _flight = self.flights[stripe].lock().await;
+        self.cache.lock().await.remove(&ovr_key);
+        cache::remove(self.directory.clone(), &ovr_key).await;
     }
 
     async fn store(&self, key: String, response: &LyricsResponse) {
@@ -237,5 +375,63 @@ impl LyricsService {
                 },
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::pages::lyrics::parse;
+
+    #[tokio::test]
+    async fn manual_override_takes_priority_and_clears_cleanly() {
+        let dir = std::env::temp_dir().join(format!("tesify-lyrics-svc-{}", uuid::Uuid::new_v4()));
+        let service = LyricsService::with_cache(
+            reqwest::Client::new(),
+            Settings::from_values(&|_| None),
+            dir.clone(),
+        );
+        let track = Track {
+            id: "t1".into(),
+            spotify_id: "sp1".into(),
+            title: "Song".into(),
+            artist: "Artist".into(),
+            artists: vec![],
+            cover_url: None,
+            duration_ms: Some(120_000),
+            added_at: 0,
+            source_added_at: None,
+            source_url: "".into(),
+        };
+        let custom_lyrics = parse::document(
+            parse::lrc("[00:05.00]Custom fixed line\n[00:50.00]Second custom line\n[01:40.00]Third custom line"),
+            "LRCLIB",
+            "https://lrclib.net",
+            120.0,
+        )
+        .unwrap();
+        let saved = service.save_override(&track, custom_lyrics).await;
+        assert!(saved.custom);
+        assert_eq!(saved.status, "found");
+
+        let loaded = service.get_from(&track, None).await;
+        assert!(loaded.custom);
+        assert_eq!(loaded.lyrics.unwrap().lines[0].text, "Custom fixed line");
+
+        // Fresh service reading from disk should also see the override immediately.
+        let reloaded_service = LyricsService::with_cache(
+            reqwest::Client::new(),
+            Settings::from_values(&|_| None),
+            dir.clone(),
+        );
+        let from_disk = reloaded_service.get_from(&track, None).await;
+        assert!(from_disk.custom);
+        assert_eq!(from_disk.lyrics.unwrap().lines[0].text, "Custom fixed line");
+
+        reloaded_service.clear_override(&track).await;
+        let ovr_key = LyricsService::override_cache_key(&track);
+        assert!(cache::read(dir.clone(), &ovr_key).await.is_none());
+
+        let _ = std::fs::remove_dir_all(dir);
     }
 }
