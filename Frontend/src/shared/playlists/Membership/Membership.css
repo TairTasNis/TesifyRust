@@ -1,7 +1,7 @@
 .library-plus {
   display: inline-grid;
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
   flex: 0 0 auto;
   place-items: center;
   padding: 0;
@@ -12,9 +12,35 @@
   cursor: pointer;
   touch-action: manipulation;
 }
-.library-plus svg { width: 22px; height: 22px; }
+.library-plus > svg { width: 20px; height: 20px; }
+.library-plus-badge {
+  display: inline-grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border: 1.75px solid var(--ink);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink);
+  transition: background var(--motion-fast) ease, border-color var(--motion-fast) ease, color var(--motion-fast) ease, transform var(--motion-fast) var(--ease-out);
+}
+.library-plus-badge svg {
+  width: 13px;
+  height: 13px;
+  stroke-width: 2.3;
+}
 .library-plus[data-saved] { color: #168547; }
-[data-theme="dark"] .library-plus[data-saved] { color: #58d58c; }
+[data-theme="dark"] .library-plus[data-saved] { color: #1db954; }
+.library-plus[data-saved] .library-plus-badge {
+  border-color: #168547;
+  background: #168547;
+  color: #ffffff;
+}
+[data-theme="dark"] .library-plus[data-saved] .library-plus-badge {
+  border-color: #1db954;
+  background: #1db954;
+  color: #111111;
+}
 .library-plus:disabled { cursor: default; opacity: .55; }
 @media (hover: hover) and (pointer: fine) {
   .library-plus:not(:disabled):hover { background: var(--surface-hover); }

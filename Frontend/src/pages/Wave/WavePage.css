@@ -19,9 +19,9 @@
 .wave-list-heading h2 { margin: 0; font-size: 18px; letter-spacing: -.02em; }
 .wave-list-heading .music-button { padding-inline: 8px; }
 .wave-track-list { margin: 0; padding: 0; list-style: none; }
-.wave-track-list li { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto auto; align-items: center; gap: 12px; padding: 7px 8px; border-radius: 12px; }
+.wave-track-list li { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto auto; align-items: center; gap: 11px; padding: 4px 8px; border-radius: 12px; }
 .wave-track-list li[aria-current] { background: var(--accent-soft); }
-.wave-track-play { position: relative; width: 44px; height: 44px; padding: 0; overflow: hidden; border: 0; border-radius: 7px; background: var(--surface); cursor: pointer; }
+.wave-track-play { position: relative; width: 40px; height: 40px; padding: 0; overflow: hidden; border: 0; border-radius: 7px; background: var(--surface); cursor: pointer; }
 .wave-track-play > svg { position: absolute; right: 3px; bottom: 3px; width: 19px; height: 19px; padding: 1px; border-radius: 50%; background: #132e34; color: #fff; }
 .wave-track-info > button { display: block; max-width: 100%; overflow: hidden; padding: 0; border: 0; background: transparent; font-size: 14px; font-weight: 750; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
 .wave-track-info .catalog-artist-links { display: block; overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }

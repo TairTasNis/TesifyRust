@@ -19,7 +19,7 @@
 @starting-style { .playlist-hero, .playlist-tracks, .playlist-error { opacity: 0; } }
 @media(prefers-reduced-motion: no-preference) { html:not([data-input="keyboard"]) .playlist-back:active { transform: translateX(-2px); } }
 .track-table-scroll { width: 100%; }
-.track-table { width: 100%; border-collapse: collapse; table-layout: fixed; text-align: left; }
+.track-table { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; text-align: left; }
 .track-table th { height: 42px; padding: 0 16px 10px 0; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 11px; font-weight: 400; }
 .track-table td { height: 54px; padding: 6px 16px 6px 0; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 .track-table .track-number { width: 44px; padding-right: 10px; padding-left: 6px; color: var(--muted); font-size: 10px; text-align: center; }
@@ -38,12 +38,16 @@
 .track-start { display: block; max-width: 100%; padding: 0; border: 0; background: transparent; color: var(--ink); font-size: 13px; font-weight: 600; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
 .track-details > .catalog-artist-links { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; }
 .track-table tbody tr { cursor: pointer; }
-.track-table tbody tr[data-active] { background: var(--accent-soft); }
+.track-table tbody tr > td:first-child { border-start-start-radius: 12px; border-end-start-radius: 12px; }
+.track-table tbody tr > td:last-child { border-start-end-radius: 12px; border-end-end-radius: 12px; }
+.track-table tbody tr[data-active] > td { background: var(--accent-soft); }
+.track-table tbody tr:is([data-active], [data-selected]) > td { border-bottom-color: transparent; }
+.track-table tbody tr:has(+ tr:is([data-active], [data-selected])) > td { border-bottom-color: transparent; }
 .track-table tbody tr[data-active] .track-start { color: var(--accent-ink); }
 .track-row-play { display: none; width: 15px; height: 15px; vertical-align: middle; }
 .track-table tr[data-active] .track-row-play { color: var(--accent-ink); }
 .track-table tr[data-active] .track-row-number { display: none; }
-@media(hover: hover) and (pointer: fine) { .track-table tbody tr:hover { background: var(--surface-hover); } .track-table tbody tr:not([data-loading]):hover .track-row-play { display: inline-block; } .track-table tbody tr:hover .track-row-number, .track-table tbody tr:hover .playback-indicator { display: none; } }
+@media(hover: hover) and (pointer: fine) { .track-table tbody tr:hover > td { background: var(--surface-hover); border-bottom-color: transparent; } .track-table tbody tr:has(+ tr:hover) > td { border-bottom-color: transparent; } .track-table tbody tr:not([data-loading]):hover .track-row-play { display: inline-block; } .track-table tbody tr:hover .track-row-number, .track-table tbody tr:hover .playback-indicator { display: none; } }
 .track-title > .playlist-cover { width: 36px; height: 36px; border-radius: 7px; }
 .track-table .track-date-column { width: 148px; color: var(--muted); font-size: 11px; }
 .track-table .track-time { width: 76px; padding-right: 10px; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -60,12 +64,13 @@
   .playlist-hero-cover { width: min(193px, 80%); }
   .playlist-hero-info h1 { font-size: 29px; }
   .playlist-actions { gap: 7px; margin-top: 19px; }
-  .track-table .track-number { width: 30px; padding-right: 5px; padding-left: 0; }
+  .track-table td { height: 46px; padding-block: 3px; }
+  .track-table .track-number { width: 32px; padding-right: 5px; padding-left: 4px; }
   .track-title { gap: 9px; }
   .track-title > .playlist-cover { width: 34px; height: 34px; }
   .track-start { font-size: 12px; }
   .track-details > .catalog-artist-links { font-size: 10px; }
-  .track-table .track-time { width: 47px; padding-right: 0; font-size: 10px; }
+  .track-table .track-time { width: 52px; padding-right: 8px; font-size: 10px; }
   .track-table th { padding-right: 10px; font-size: 10px; }
   .track-sort { gap: 3px; }
   .track-table .track-date-column { width: clamp(76px, 24vw, 100px); padding-inline: 3px; text-align: center; font-size: 10px; font-variant-numeric: tabular-nums; }
