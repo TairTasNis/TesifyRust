@@ -19,6 +19,8 @@
 .settings-storage { padding-block: 8px; }
 .settings-storage output, .settings-storage-status { color: var(--muted); font-variant-numeric: tabular-nums; }
 .settings-storage-status { font-size: 13px; }
+.settings-download-directory { display: grid; gap: 5px; }
+.settings-download-directory output { font-size: 12px; font-weight: 500; overflow-wrap: anywhere; user-select: text; }
 .wave-settings { padding-block: 16px; }
 .wave-settings h2 { margin: 0 0 18px; font-size: 20px; }
 .wave-settings .wave-changes-switch { min-height: 40px; padding-block: 0 10px; margin-bottom: 16px; border-bottom: 1px solid var(--line); }

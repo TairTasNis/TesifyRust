@@ -28,7 +28,7 @@
 .mobile-tabs[data-mode="search"] { max-width: 100%; }
 .mobile-tabs[data-mode="tabs"] :is(.mobile-search-glass, .mobile-tab::before),
 .mobile-tabs[data-mode="search"] .mobile-tab::before { backdrop-filter: none; }
-.app-window[data-dock-hidden] .mobile-tabs { transform: translateY(calc(100% + 12px + env(safe-area-inset-bottom, 0px))); }
+.app-window[data-dock-hidden]:not(:has(.route-surface:not([inert]) .track-selection)) .mobile-tabs { transform: translateY(calc(100% + 12px + env(safe-area-inset-bottom, 0px))); }
 :root[data-theme="dark"] .mobile-tabs {
   --glass: #16161650;
   --glass-sheen: #ffffff1b;

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { backend, errorMessage } from '../../shared/lib/backend'
+import { useDownloads } from '../../shared/playback/downloads/DownloadsProvider'
 import { useTranslation } from '../../shared/preferences/i18n'
 import { usePreferences } from '../../shared/preferences/preferences'
 import Button from '../../shared/ui/Button/Button'
@@ -8,6 +9,8 @@ import MusicLoader from '../../shared/ui/MusicLoader/MusicLoader'
 type StorageUsage = {
   appBytes: number
   previewBytes: number
+  downloadBytes: number
+  downloadDirectory: string
   volume: { usedBytes: number; totalBytes: number } | null
 }
 
@@ -21,6 +24,7 @@ function formatBytes(bytes: number, language: string) {
 export default function StorageSettings() {
   const t = useTranslation()
   const { language } = usePreferences()
+  const completedDownloads = useDownloads().progress?.completed ?? 0
   const [usage, setUsage] = useState<StorageUsage | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [clearing, setClearing] = useState(false)
@@ -28,12 +32,16 @@ export default function StorageSettings() {
   const [retry, setRetry] = useState(0)
 
   useEffect(() => {
+    if (clearing) return
     let active = true
     backend<StorageUsage>('get_storage_usage', {}, '/settings/storage').then(result => {
-      if (active) setUsage(result)
+      if (active) {
+        setUsage(result)
+        setError(null)
+      }
     }).catch(error => { if (active) setError(errorMessage(error)) })
     return () => { active = false }
-  }, [retry])
+  }, [clearing, retry, completedDownloads])
 
   async function clear() {
     setClearing(true)
@@ -47,11 +55,14 @@ export default function StorageSettings() {
   }
 
   const size = (bytes: number) => formatBytes(bytes, language)
+  const downloadSize = new Intl.NumberFormat(language, { style: 'unit', unit: 'megabyte', maximumFractionDigits: 2 })
   return <section id="settings-storage" className="settings-panel settings-storage" aria-label={t('Память')} aria-busy={clearing || (!usage && !error)}>
     {!usage && !error && <MusicLoader label={t('Проверяем память')} />}
     {usage && <>
       {usage.volume && <div className="settings-row"><span>{t('Занято на диске')}</span><output>{t('{0} из {1}', size(usage.volume.usedBytes), size(usage.volume.totalBytes))}</output></div>}
       <div className="settings-row"><span>{t('Данные Tesify')}</span><output>{size(usage.appBytes)}</output></div>
+      <div className="settings-row"><span>{t('Скачанная музыка')}</span><output>{downloadSize.format(usage.downloadBytes / 1_000_000)}</output></div>
+      <div className="settings-row settings-download-directory"><span>{t('Папка скачанной музыки')}</span><output dir="auto">{usage.downloadDirectory}</output></div>
       <div className="settings-row"><span>{t('Превью песен')}</span><output>{size(usage.previewBytes)}</output></div>
       <div className="settings-row"><Button variant="secondary" disabled={clearing || !usage.previewBytes} onClick={() => { void clear() }}>{t('Удалить превью песен')}</Button></div>
     </>}

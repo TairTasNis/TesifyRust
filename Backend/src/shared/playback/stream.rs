@@ -443,6 +443,8 @@ mod tests {
         let restarted = PlaybackService::new(client.clone(), engine, previews).unwrap();
         let downloaded = restarted.downloads.list().await.unwrap();
         assert_eq!(downloaded.len(), 1);
+        assert_eq!(restarted.downloads.audio_bytes().unwrap(), data.len() as u64);
+        assert_eq!(restarted.downloads.directory(), directory.0.join("downloads-v1"));
         assert_eq!(downloaded[0].id, track.spotify_id);
         let lyrics = restarted.downloads.lyrics(&track.spotify_id).await.unwrap().lyrics.unwrap();
         assert_eq!(lyrics.lines[0].words[0].text, "Hello");

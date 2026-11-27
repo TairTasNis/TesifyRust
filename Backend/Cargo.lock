@@ -3963,7 +3963,7 @@ dependencies = [
 
 [[package]]
 name = "tesify"
-version = "26.11.0-dev.17"
+version = "26.11.0-dev.18"
 dependencies = [
  "axum",
  "base64 0.22.1",

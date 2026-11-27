@@ -26,6 +26,32 @@ impl DownloadStore {
         self.root.join(id).join("audio")
     }
 
+    pub fn directory(&self) -> &Path {
+        &self.root
+    }
+
+    pub fn audio_bytes(&self) -> io::Result<u64> {
+        let entries = match std::fs::read_dir(&self.root) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(0),
+            Err(error) => return Err(error),
+        };
+        let mut bytes = 0_u64;
+        for entry in entries {
+            let entry = entry?;
+            if !entry.file_name().to_str().is_some_and(valid_id) || !entry.file_type()?.is_dir() {
+                continue;
+            }
+            match std::fs::symlink_metadata(entry.path().join("audio")) {
+                Ok(audio) if audio.is_file() => bytes = bytes.saturating_add(audio.len()),
+                Ok(_) => {}
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(bytes)
+    }
+
     pub async fn get(&self, id: &str) -> Option<Download> {
         if !valid_id(id) {
             return None;

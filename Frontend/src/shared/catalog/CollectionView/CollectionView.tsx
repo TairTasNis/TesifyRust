@@ -1,11 +1,10 @@
 import { useTranslation } from '../../preferences/i18n'
 import { currentLanguage } from '../../preferences/preferences'
 import type { CSSProperties } from 'react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { errorMessage } from '../../lib/backend'
 import { usePlayback } from '../../playback/PlaybackProvider'
 import { useLibrary } from '../../playlists/Membership/LibraryProvider'
-import PlaylistHeader from '../../playlists/PlaylistHeader/PlaylistHeader'
 import { totalDuration, trackCount } from '../../playlists/format'
 import Button from '../../ui/Button/Button'
 import Icon from '../../ui/Icon/Icon'
@@ -28,7 +27,6 @@ export default function CollectionView({ data, loading, more, error, onRetry, on
   const { index, saveCollection } = useLibrary()
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
-  const heading = useRef<HTMLHeadingElement>(null)
   const saved = index?.collections.some(item => item.kind === kind && item.id === data?.item.id) ?? false
   const saveLabel = t(saved ? 'Убрать из библиотеки' : 'Добавить в библиотеку')
   const searching = Boolean(trackQuery?.trim())
@@ -58,8 +56,7 @@ export default function CollectionView({ data, loading, more, error, onRetry, on
   const toolbar = <div className="catalog-toolbar"><button className="catalog-back" aria-label={t("Назад")} onClick={onBack}><Icon name="back" /></button></div>
   return <main className="workspace catalog-page collection-page" aria-label={kind === 'album' ? t("Альбом Spotify") : t("Плейлист Spotify")} data-dock-scroll={trackQuery !== undefined || undefined}>
     {data ? <>
-      {kind === 'playlist' && <PlaylistHeader title={data.item.name} heading={heading} onBack={onBack} />}
-      <header className="collection-hero" style={{ '--collection-color': data.item.color ?? '#465344' } as CSSProperties}>{toolbar}<div className="collection-identity"><PlaylistCover url={data.item.imageUrl} name={data.item.name} /><div><span className="collection-kind">{t(kindLabel(data.item))}</span><h1 ref={heading}>{data.item.name}</h1>{data.description && <p className="collection-description">{data.description}</p>}<div className="collection-meta">{kind === 'album' ? <ArtistLinks artists={data.item.artists} fallback={data.owner} onOpen={onOpen} /> : <strong>{data.owner}</strong>}{data.item.year && <span>{data.item.year}</span>}{data.followers !== null && <span>{number(data.followers)} {t("сохранений")}</span>}<span>{trackCount(data.tracks.total)}</span>{data.tracks.nextOffset === null && duration > 0 && <span>{totalDuration(duration)}</span>}</div></div></div></header>
+      <header className="collection-hero" style={{ '--collection-color': data.item.color ?? '#465344' } as CSSProperties}>{toolbar}<div className="collection-identity"><PlaylistCover url={data.item.imageUrl} name={data.item.name} /><div><span className="collection-kind">{t(kindLabel(data.item))}</span><h1>{data.item.name}</h1>{data.description && <p className="collection-description">{data.description}</p>}<div className="collection-meta">{kind === 'album' ? <ArtistLinks artists={data.item.artists} fallback={data.owner} onOpen={onOpen} /> : <strong>{data.owner}</strong>}{data.item.year && <span>{data.item.year}</span>}{data.followers !== null && <span>{number(data.followers)} {t("сохранений")}</span>}<span>{trackCount(data.tracks.total)}</span>{data.tracks.nextOffset === null && duration > 0 && <span>{totalDuration(duration)}</span>}</div></div></div></header>
       <div className="catalog-body"><div className="catalog-actions"><button className="catalog-play" disabled={!queue.length} aria-label={playing ? t("Пауза альбома или плейлиста") : t("Слушать альбом или плейлист")} onClick={() => { if (player.playlistId === queueId && player.current) player.toggle(); else if (queue.length) player.playQueue(queueId, queue, 0) }}><Icon name={playing ? 'pause' : 'play'} /></button>
           <button className="library-plus collection-save" type="button" aria-label={saveLabel} title={saveLabel}
             data-saved={saved || undefined} aria-busy={saving} disabled={!index || saving} onClick={() => { void toggleSaved() }}>

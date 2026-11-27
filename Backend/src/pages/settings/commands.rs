@@ -15,6 +15,8 @@ pub struct VolumeUsage {
 pub struct StorageUsage {
     app_bytes: u64,
     preview_bytes: u64,
+    download_bytes: u64,
+    download_directory: String,
     volume: Option<VolumeUsage>,
 }
 
@@ -33,9 +35,12 @@ pub async fn storage_usage(services: &AppServices, clear: bool) -> Result<Storag
             .playback
             .intro_storage_bytes()
             .map_err(|_| "Не удалось получить данные о памяти.")?;
+        let downloads = &services.playback.downloads;
         Ok(StorageUsage {
             app_bytes,
             preview_bytes,
+            download_bytes: downloads.audio_bytes().map_err(|_| "Не удалось получить данные о памяти.")?,
+            download_directory: downloads.directory().to_string_lossy().into_owned(),
             volume: volume_usage(&services.data_dir),
         })
     })

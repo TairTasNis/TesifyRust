@@ -26,6 +26,10 @@ export function useMobileDockScroll(route: string, enabled: boolean) {
       const clamped = limit < previousLimit && position === limit
       previous = position
       previousLimit = limit
+      if (target.closest('.route-surface')?.querySelector('.track-selection')) {
+        showDock()
+        return
+      }
       if (position <= 2) { distance = 0; setHidden(false); return }
       if (!delta || clamped) return
       distance = Math.sign(delta) === Math.sign(distance) ? distance + delta : delta
@@ -33,8 +37,16 @@ export function useMobileDockScroll(route: string, enabled: boolean) {
       else if (distance <= -10) { setHidden(false); distance = 0 }
     }
 
+    function showDock() {
+      distance = 0
+      setHidden(false)
+    }
     document.addEventListener('scroll', scroll, { capture: true, passive: true })
-    return () => document.removeEventListener('scroll', scroll, true)
+    window.addEventListener('tesify:track-selection', showDock)
+    return () => {
+      document.removeEventListener('scroll', scroll, true)
+      window.removeEventListener('tesify:track-selection', showDock)
+    }
   }, [route, enabled])
 
   return enabled && hidden

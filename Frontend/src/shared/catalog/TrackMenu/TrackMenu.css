@@ -24,3 +24,23 @@
 .track-selection .track-selection-close { width: 40px; padding-inline: 0; background: transparent; }
 .track-selection svg { width: 16px; height: 16px; flex: none; }
 .track-selection-count { flex: 1 0 auto; color: var(--muted); font-size: 12px; padding-inline-end: 5px; }
+.track-selection-actions { display: contents; }
+
+.desktop--mobile .track-selection {
+  position: fixed;
+  z-index: 2;
+  inset: auto max(var(--mobile-gutter), env(safe-area-inset-right, 0px)) calc(var(--mobile-content-bottom) + 8px) max(var(--mobile-gutter), env(safe-area-inset-left, 0px));
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  grid-template-rows: repeat(2, 44px);
+  gap: 6px;
+  margin: 0;
+  padding: 7px;
+  border-radius: 14px;
+  box-shadow: 0 5px 22px #0004;
+}
+.desktop--mobile .track-selection button { min-width: 0; height: 44px; line-height: 1.2; }
+.desktop--mobile .track-selection-close { width: 44px; }
+.desktop--mobile .track-selection-actions { grid-column: 1 / -1; display: flex; gap: 6px; }
+.desktop--mobile .track-selection-actions > button { flex: 1 1 0; }
+.desktop--mobile .track-selection-count { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

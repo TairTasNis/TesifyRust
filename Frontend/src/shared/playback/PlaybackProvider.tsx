@@ -7,6 +7,8 @@ import { prepareTrack, prefetchTrack, setBackgroundPlayback, syncMediaState } fr
 import type { PlaybackSource } from './api'
 import { getWaveTracks, playedSeconds, saveWaveFeedback, waveQueueId } from './wave'
 import type { WaveFeedback, WaveOptions } from './wave'
+import { flushActivity, recordListening } from './activity/activityStore'
+import { ListeningTracker } from './activity/listeningTracker'
 
 type Queue = { playlistId: string; tracks: Track[]; index: number }
 type WaveLoad = 'preview' | 'start' | 'append'
@@ -29,6 +31,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   const backgroundPlaybackRef = useRef(backgroundPlayback)
   backgroundPlaybackRef.current = backgroundPlayback
   const audio = useRef<HTMLAudioElement>(null)
+  const [listening] = useState(() => new ListeningTracker(recordListening))
   const queueRef = useRef<Queue | null>(null)
   const request = useRef(0)
   const intent = useRef(false)
@@ -78,6 +81,8 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     if (nextQueue.playlistId === waveQueueId) setWavePreview([])
     waveRefillFailed.current = false
     const generation = ++request.current
+    if (ready.current) listening.stop(element)
+    listening.reset()
     ready.current = false; intent.current = true
     element.pause(); element.removeAttribute('src'); element.load()
     queueRef.current = nextQueue; setQueue(nextQueue)
@@ -95,7 +100,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       if (generation !== request.current) return
       ready.current = false; intent.current = false; setPlaying(false); setLoading(false); setError(errorMessage(error))
     }
-  }, [playAudio])
+  }, [listening, playAudio])
 
   const loadWave = useCallback(async (mode: WaveLoad, options = waveOptions) => {
     if (waveRequest.current) {
@@ -178,10 +183,13 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     if (!ready.current && !intent.current) { void start(queueRef.current); return }
     intent.current = !intent.current; setPlaying(intent.current); setError(null)
     if (intent.current) {
-      if (element.ended) element.currentTime = 0
+      if (element.ended) {
+        listening.reset()
+        element.currentTime = 0
+      }
       void playAudio(request.current)
     } else element.pause()
-  }, [loadWave, playAudio, start])
+  }, [listening, loadWave, playAudio, start])
 
   const syncNativeMedia = useCallback((positionSeconds?: number) => {
     const track = queueRef.current?.tracks[queueRef.current.index] ?? null
@@ -207,9 +215,10 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     const element = audio.current
     if (!element || !ready.current || !Number.isFinite(element.duration) || element.duration <= 0) return
     const position = Math.max(0, Math.min(element.duration, value))
+    listening.stop(element)
     element.currentTime = position; setTime(position)
     syncNativeMedia(position)
-  }, [syncNativeMedia])
+  }, [listening, syncNativeMedia])
 
   const advance = useCallback((skipped: boolean) => {
     const queue = queueRef.current
@@ -282,6 +291,18 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     try { localStorage.setItem('tesify.volume', String(volume)) } catch { /* Storage can be unavailable. */ }
   }, [volume])
   useEffect(() => () => { ++request.current; waveRequest.current = null; audio.current?.pause() }, [])
+  useEffect(() => {
+    const flush = () => {
+      if (audio.current && ready.current) listening.sample(audio.current)
+      flushActivity()
+    }
+    document.addEventListener('visibilitychange', flush)
+    window.addEventListener('pagehide', flush)
+    return () => {
+      document.removeEventListener('visibilitychange', flush)
+      window.removeEventListener('pagehide', flush)
+    }
+  }, [listening])
   useEffect(() => {
     if (!queue || !playing || loading || duration <= 0 || time < duration * .5) return
     const nextTrack = queue.tracks[queue.index + 1]
@@ -367,16 +388,32 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     reorderQueue, toggle, next, previous, seek, setVolume, mute, retry }}>
     {children}
     <audio ref={audio} preload="auto" data-testid="playback-audio"
-      onTimeUpdate={(event) => { if (ready.current) { setTime(event.currentTarget.currentTime); checkWaveListening(event.currentTarget) } }}
+      onTimeUpdate={(event) => {
+        if (!ready.current) return
+        listening.sample(event.currentTarget)
+        setTime(event.currentTarget.currentTime)
+        checkWaveListening(event.currentTarget)
+      }}
+      onSeeking={() => listening.stop()}
+      onSeeked={event => {
+        const element = event.currentTarget
+        if (ready.current && !element.paused && element.readyState >= 3) listening.resume(element)
+      }}
       onDurationChange={(event) => { const value = event.currentTarget.duration; if (ready.current && Number.isFinite(value) && value > 0) setDuration(value) }}
       onCanPlay={() => { if (ready.current) setLoading(false) }}
-      onPlaying={() => {
+      onPlaying={event => {
         if (!ready.current || !intent.current) return
+        listening.resume(event.currentTarget)
         if (queueRef.current?.playlistId === waveQueueId) waveOutcome.current.started = true
         setPlaying(true); setLoading(false); setError(null)
       }}
-      onWaiting={() => { if (ready.current && intent.current) setLoading(true) }}
-      onPause={() => {
+      onWaiting={event => {
+        listening.stop(event.currentTarget)
+        if (ready.current && intent.current) setLoading(true)
+      }}
+      onPause={event => {
+        listening.stop(event.currentTarget)
+        flushActivity()
         if (!ready.current) return
         if (!intent.current) {
           setPlaying(false)
@@ -394,8 +431,15 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         intent.current = false
         setPlaying(false)
       }}
-      onEnded={event => { if (ready.current) { checkWaveListening(event.currentTarget, true); advance(false) } }}
-      onError={() => { if (ready.current && audio.current?.error) { ready.current = false; intent.current = false; setPlaying(false); setLoading(false); setError('Не удалось загрузить аудио. Повторите попытку или включите следующий трек.') } }} />
+      onEnded={event => {
+        listening.stop(event.currentTarget)
+        flushActivity()
+        if (ready.current) { checkWaveListening(event.currentTarget, true); advance(false) }
+      }}
+      onError={event => {
+        listening.stop(event.currentTarget)
+        if (ready.current && audio.current?.error) { ready.current = false; intent.current = false; setPlaying(false); setLoading(false); setError('Не удалось загрузить аудио. Повторите попытку или включите следующий трек.') }
+      }} />
   </PlaybackContext.Provider>
 }
 

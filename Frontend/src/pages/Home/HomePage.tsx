@@ -3,6 +3,7 @@ import { waveQueueId } from '../../shared/playback/wave'
 import { useTranslation } from '../../shared/preferences/i18n'
 import Icon from '../../shared/ui/Icon/Icon'
 import MusicLoader from '../../shared/ui/MusicLoader/MusicLoader'
+import ListeningStats from './ListeningStats'
 import './HomePage.css'
 
 export default function HomePage({ onOpenWave }: { onOpenWave: () => void }) {
@@ -29,6 +30,7 @@ export default function HomePage({ onOpenWave }: { onOpenWave: () => void }) {
         </button>
       </section>
       {player.waveError && <p className="form-error wave-banner-error" role="alert">{t(player.waveError)}</p>}
+      <ListeningStats />
     </main>
   )
 }

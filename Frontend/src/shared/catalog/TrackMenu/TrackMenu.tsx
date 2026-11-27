@@ -24,6 +24,10 @@ export default function TrackMenu({ state, onOpen, playlistId, queueId, selectin
   const { menu, targets } = state
 
   useLayoutEffect(() => {
+    if (state.selecting) window.dispatchEvent(new Event('tesify:track-selection'))
+  }, [state.selecting])
+
+  useLayoutEffect(() => {
     if (!menu || menu.touch || !panel.current) return
     const element = panel.current
     const view = document.documentElement
@@ -90,10 +94,12 @@ export default function TrackMenu({ state, onOpen, playlistId, queueId, selectin
       <button type="button" className="track-selection-close" aria-label={t('Выйти из режима выбора')} onClick={state.clear}><Icon name="close" /></button>
       <span className="track-selection-count" aria-live="polite">{selectingMore ? t('Загружаем треки') : trackCount(state.selected.length)}</span>
       <button type="button" onClick={state.toggleAll}>{t(state.all ? 'Снять выделение' : 'Выделить всё')}</button>
-      <button type="button" disabled={selectingMore || !selectedTracks.length} aria-label={t(actionLabel(selectedTracks))} onClick={() => changePlaylists(selectedTracks)}>
-        <Icon name={actionLabel(selectedTracks) === 'Добавить в плейлист' ? 'plus' : 'trash'} />{t(playlistId ? 'Удалить' : actionLabel(selectedTracks))}
-      </button>
-      {queueId !== downloadsQueueId && <button type="button" disabled={selectingMore || downloads.busy || !newDownloads(selectedTracks).length} onClick={() => download(selectedTracks)}><Icon name="import" />{t('Скачать')}</button>}
+      <div className="track-selection-actions">
+        <button type="button" disabled={selectingMore || !selectedTracks.length} aria-label={t(actionLabel(selectedTracks))} onClick={() => changePlaylists(selectedTracks)}>
+          <Icon name={actionLabel(selectedTracks) === 'Добавить в плейлист' ? 'plus' : 'trash'} />{t(playlistId ? 'Удалить' : actionLabel(selectedTracks))}
+        </button>
+        {queueId !== downloadsQueueId && <button type="button" disabled={selectingMore || downloads.busy || !newDownloads(selectedTracks).length} onClick={() => download(selectedTracks)}><Icon name="import" />{t('Скачать')}</button>}
+      </div>
     </div>}
     {menu && (menu.touch ? <Modal title={menu.track.title} onClose={state.close}><div className="track-menu-actions">{actions}</div></Modal>
       : createPortal(<div className="track-menu-actions track-menu-popover" ref={panel} role="group" aria-label={menu.track.title}
