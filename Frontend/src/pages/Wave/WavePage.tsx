@@ -1,6 +1,8 @@
 import { useEffect } from 'react'
 import type { OpenCatalog } from '../../shared/catalog/types'
 import TrackArtistLinks from '../../shared/catalog/ArtistLinks/TrackArtistLinks'
+import TrackMenu from '../../shared/catalog/TrackMenu/TrackMenu'
+import { useTrackMenu } from '../../shared/catalog/TrackMenu/useTrackMenu'
 import { usePlayback } from '../../shared/playback/PlaybackProvider'
 import { waveMoods, waveModes, waveQueueId } from '../../shared/playback/wave'
 import type { WaveOptions } from '../../shared/playback/wave'
@@ -18,6 +20,7 @@ export default function WavePage({ onBack, onOpen }: { onBack: () => void; onOpe
   const t = useTranslation()
   const { waveOptions } = usePreferences()
   const player = usePlayback()
+  const menu = useTrackMenu(player.waveTracks)
   const active = player.playlistId === waveQueueId
   const playing = active && player.playing
   const { prepareWave } = player
@@ -56,10 +59,11 @@ export default function WavePage({ onBack, onOpen }: { onBack: () => void; onOpe
     </div>
     {player.waveError && <p className="form-error" role="alert">{t(player.waveError)}</p>}
     {player.waveFeedbackError && <p className="form-error" role="status">{t(player.waveFeedbackError)}</p>}
+    <TrackMenu state={menu} onOpen={onOpen} queueId={waveQueueId} />
     {player.waveTracks.length > 0 && <ol className="wave-track-list" aria-label={t('Очередь')} aria-busy={player.waveLoading}>
       {player.waveTracks.map((track, index) => {
         const current = active && player.current?.id === track.id
-        return <li key={track.id} aria-current={current || undefined}>
+        return <li key={track.id} {...menu.row<HTMLLIElement>(track)} aria-current={current || undefined}>
           <button className="wave-track-play" type="button" onClick={() => player.playQueue(waveQueueId, player.waveTracks, index)}
             aria-label={`${t(current && playing ? 'Пауза' : 'Воспроизвести')} · ${track.title}`}>
             <PlaylistCover url={track.coverUrl} name={track.title} />

@@ -33,7 +33,10 @@ fn error(message: String) -> (StatusCode, Json<Value>) {
 pub fn router(services: AppServices) -> Router {
     Router::new()
         .route("/health", get(|| async { Json(json!({"ready":true})) }))
+        .route("/downloads", get(downloads).post(download_tracks))
+        .route("/downloads/progress", get(download_progress))
         .route("/playlists", get(list).post(create))
+        .route("/playlists/with-tracks", post(create_with_tracks))
         .route("/playlists/import/spotify", post(create_with_import))
         .route("/library", get(library_index))
         .route("/library/memberships", post(track_memberships))
@@ -45,6 +48,8 @@ pub fn router(services: AppServices) -> Router {
         .route("/playlists/sync/spotify", post(sync_spotify))
         .route("/covers", post(upload))
         .route("/search/spotify", get(search_spotify))
+        .route("/search/spotify/link", post(expand_spotify_link))
+        .route("/spotify/tracks/{id}", get(spotify_track))
         .route("/spotify/artists/{id}", get(spotify_artist))
         .route("/spotify/artists/{id}/releases", get(spotify_releases))
         .route("/spotify/albums/{id}", get(spotify_album))
@@ -66,6 +71,34 @@ pub fn router(services: AppServices) -> Router {
         .layer(DefaultBodyLimit::max(24 * 1024 * 1024))
         .layer(middleware::from_fn(loopback_only))
         .with_state(services)
+}
+
+async fn downloads(State(services): State<AppServices>) -> ApiResult<Vec<Track>> {
+    crate::pages::downloads::commands::list(&services).await.map(Json).map_err(error)
+}
+
+async fn download_progress(State(services): State<AppServices>) -> Json<crate::pages::downloads::commands::DownloadProgress> {
+    Json(crate::pages::downloads::commands::progress(&services))
+}
+
+async fn download_tracks(
+    State(services): State<AppServices>,
+    Json(input): Json<crate::pages::downloads::commands::DownloadInput>,
+) -> ApiResult<crate::pages::downloads::commands::DownloadProgress> {
+    crate::pages::downloads::commands::start(&services, input).await.map(Json).map_err(error)
+}
+
+async fn spotify_track(State(services): State<AppServices>, Path(id): Path<String>) -> ApiResult<Track> {
+    crate::pages::search::commands::track_detail(&services, &id).await.map(Json).map_err(error)
+}
+
+#[derive(Deserialize)]
+struct SpotifyLink {
+    link: String,
+}
+
+async fn expand_spotify_link(Json(input): Json<SpotifyLink>) -> ApiResult<String> {
+    crate::pages::search::commands::expand_link(&input.link).await.map(Json).map_err(error)
 }
 
 async fn loopback_only(request: Request, next: Next) -> Response {
@@ -142,6 +175,12 @@ async fn create(
     Json(draft): Json<PlaylistDraft>,
 ) -> ApiResult<Playlist> {
     services.library.create(draft).map(Json).map_err(error)
+}
+async fn create_with_tracks(
+    State(services): State<AppServices>,
+    Json(input): Json<crate::pages::library::commands::PlaylistWithTracks>,
+) -> ApiResult<LibraryIndex> {
+    crate::pages::library::commands::create_with_tracks(&services, input).await.map(Json).map_err(error)
 }
 async fn create_with_import(State(services): State<AppServices>, Json(input): Json<crate::pages::playlist::commands::CreateSpotifyImport>) -> ApiResult<Playlist> {
     crate::pages::playlist::commands::create_with_spotify(&services, input).await.map(Json).map_err(error)

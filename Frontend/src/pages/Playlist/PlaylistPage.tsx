@@ -1,5 +1,5 @@
 import { useTranslation } from '../../shared/preferences/i18n'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import TrackArtistLinks from '../../shared/catalog/ArtistLinks/TrackArtistLinks'
 import TrackMenu from '../../shared/catalog/TrackMenu/TrackMenu'
 import { useTrackMenu } from '../../shared/catalog/TrackMenu/useTrackMenu'
@@ -9,6 +9,7 @@ import { errorMessage } from '../../shared/lib/backend'
 import { usePlayback } from '../../shared/playback/PlaybackProvider'
 import { useLibrary } from '../../shared/playlists/Membership/LibraryProvider'
 import PlaylistEditor from '../../shared/playlists/PlaylistEditor/PlaylistEditor'
+import PlaylistHeader from '../../shared/playlists/PlaylistHeader/PlaylistHeader'
 import { formatAddedDate, formatDuration, totalDuration, trackCount } from '../../shared/playlists/format'
 import type { ImportResult, Playlist } from '../../shared/playlists/types'
 import Button from '../../shared/ui/Button/Button'
@@ -42,6 +43,7 @@ export default function PlaylistPage({ playlistId, onBack, onOpen, trackQuery }:
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [retry, setRetry] = useState(0)
   const [sort, setSort] = useState<TrackSort | null>(null)
+  const heading = useRef<HTMLHeadingElement>(null)
 
   useEffect(() => {
     let active = true
@@ -76,12 +78,13 @@ export default function PlaylistPage({ playlistId, onBack, onOpen, trackQuery }:
 
   return (
     <main className="workspace playlist-page" aria-label={t("Плейлист")} data-dock-scroll={trackQuery !== undefined || undefined}>
+      {playlist && !error && <PlaylistHeader title={playlist.name} heading={heading} onBack={onBack} />}
       <button className="playlist-back" onClick={onBack}><Icon name="back" />{t("Библиотека")}</button>
       {loading && !playlist ? <MusicLoader label={t("Загружаем плейлист")} /> : error || !playlist ? <div className="playlist-error" role="alert"><h1>{t("Не удалось открыть плейлист")}</h1><p>{error && t(error)}</p><Button variant="secondary" onClick={() => setRetry((value) => value + 1)}>{t("Попробовать снова")}</Button></div> : <>
         <header className="playlist-hero">
           <PlaylistCover url={playlist.coverUrl} name={playlist.name} className="playlist-hero-cover" />
           <div className="playlist-hero-info">
-            <h1>{playlist.name}</h1>
+            <h1 ref={heading}>{playlist.name}</h1>
             {playlist.description && <p className="playlist-description">{playlist.description}</p>}
             <div className="playlist-meta"><span>{trackCount(playlist.tracks.length)}</span>{duration > 0 && <span><Icon name="clock" />{totalDuration(duration)}</span>}</div>
             <div className="playlist-actions"><Button variant="secondary" onClick={() => setEditing(true)}><Icon name="edit" />{t("Редактировать")}</Button><Button variant="ghost" className="playlist-delete" aria-label={t("Удалить плейлист")} onClick={() => { setDeleting(true); setDeleteError(null) }}><Icon name="trash" /></Button></div>
@@ -89,7 +92,7 @@ export default function PlaylistPage({ playlistId, onBack, onOpen, trackQuery }:
         </header>
         {!!trackQuery?.trim() && !shown.length && <p role="status">{t('Ничего не найдено')}</p>}
         {shown.length > 0 && <section className="playlist-tracks" aria-label={t("Треки плейлиста")}>
-          <TrackMenu state={menu} onOpen={onOpen} playlistId={playlistId} />
+          <TrackMenu state={menu} onOpen={onOpen} playlistId={playlistId} queueId={playlistId} />
           <div className="track-table-scroll"><table className="track-table"><thead><tr>
             <TrackSortHeader column="index" label={t("Номер")} className="track-number" sort={sort} onSort={changeSort}>#</TrackSortHeader>
             <TrackSortHeader column="title" label={t("Название")} sort={sort} onSort={changeSort} />

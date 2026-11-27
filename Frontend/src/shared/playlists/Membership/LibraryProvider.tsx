@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { ReactNode } from 'react'
 import { backend, errorMessage } from '../../lib/backend'
 import { getWaveProfile } from '../../playback/wave'
-import type { LibraryIndex, SavedCollection } from '../types'
+import type { LibraryIndex, PlaylistDraft, SavedCollection } from '../types'
 import TrackPlaylistDialog from './TrackPlaylistDialog'
 
 type TrackTarget = { spotifyId: string; title: string }
@@ -79,6 +79,11 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   return <LibraryContext.Provider value={value}>
     {children}
     {target && <TrackPlaylistDialog tracks={target} index={index} error={error} onRetry={refresh} onClose={() => setTarget(null)}
+      onCreate={async (draft: PlaylistDraft) => {
+        const input = { draft, spotifyIds: target.map(track => track.spotifyId) }
+        await editLibrary(() => backend('create_playlist_with_tracks', { input }, '/playlists/with-tracks', 'POST', input))
+        setTarget(null)
+      }}
       onSave={async (add, remove) => {
         await changeMemberships({ spotifyIds: target.map(track => track.spotifyId), add, remove })
         setTarget(null)

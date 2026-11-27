@@ -12,6 +12,7 @@ import SearchPage, { savedSearch } from '../pages/Search/SearchPage'
 import ArtistPage from '../pages/Artist/ArtistPage'
 import AlbumPage from '../pages/Album/AlbumPage'
 import SpotifyPlaylistPage from '../pages/SpotifyPlaylist/SpotifyPlaylistPage'
+import TrackPage from '../pages/Track/TrackPage'
 import SettingsPage from '../pages/Settings/SettingsPage'
 import type { OpenCatalog } from '../shared/catalog/types'
 import AppWindow from '../shared/layout/AppWindow/AppWindow'
@@ -21,6 +22,8 @@ import MobileTabs from '../shared/layout/Sidebar/MobileTabs'
 import type { MobileTabsMode } from '../shared/layout/Sidebar/MobileTabs'
 import { useInputMode } from '../shared/lib/motion'
 import { PlaybackProvider, usePlayback } from '../shared/playback/PlaybackProvider'
+import { DownloadsProvider } from '../shared/playback/downloads/DownloadsProvider'
+import DownloadProgress from '../shared/playback/downloads/DownloadProgress'
 import MiniPlayer from '../shared/playback/MiniPlayer/MiniPlayer'
 import MobileMiniPlayer from '../shared/playback/MiniPlayer/MobileMiniPlayer'
 import { LibraryProvider } from '../shared/playlists/Membership/LibraryProvider'
@@ -32,11 +35,11 @@ import { useMobileDockScroll } from './useMobileDockScroll'
 import './RouteTransition.css'
 
 const routeParents: Partial<Record<PageId, PageId>> = {
-  about: 'home', wave: 'home', playlist: 'library', downloads: 'library', artist: 'search', album: 'search', 'spotify-playlist': 'search',
+  about: 'home', wave: 'home', playlist: 'library', downloads: 'library', track: 'search', artist: 'search', album: 'search', 'spotify-playlist': 'search',
 }
 
 export default function App() {
-  return <LibraryProvider><PlaybackProvider><AppContent /></PlaybackProvider></LibraryProvider>
+  return <DownloadsProvider><LibraryProvider><PlaybackProvider><AppContent /></PlaybackProvider></LibraryProvider></DownloadsProvider>
 }
 
 function AppContent() {
@@ -230,12 +233,16 @@ function AppContent() {
       case 'home': return <HomePage onOpenWave={() => navigate('wave')} />
       case 'wave': return <WavePage onBack={() => leavePage()} onOpen={openCatalog} />
       case 'settings': return <SettingsPage onAbout={mobile ? () => navigate('about') : undefined} />
-      case 'search': return <SearchPage onOpen={openCatalog} mobileSearch={mobile ? { query: mobileQuery, submitCount: mobileSubmitCount } : undefined} />
+      case 'search': return <SearchPage active={item === route} onOpen={openCatalog} onOpenLink={({ kind, id }) => {
+        setMobileQuery('')
+        navigate(kind === 'playlist' ? 'spotify-playlist' : kind, id)
+      }} mobileSearch={mobile ? { query: mobileQuery, submitCount: mobileSubmitCount } : undefined} />
+      case 'track': return <TrackPage id={id} onOpen={openCatalog} onBack={() => leavePage()} />
       case 'artist': return <ArtistPage id={id} onOpen={openCatalog} onBack={() => leavePage()} />
       case 'album': return <AlbumPage id={id} onOpen={openCatalog} onBack={() => leavePage()} />
       case 'spotify-playlist': return <SpotifyPlaylistPage id={id} onOpen={openCatalog} onBack={() => leavePage()} trackQuery={trackQuery} />
       case 'library': return <LibraryPage onOpenPlaylist={id => navigate('playlist', id)} onOpenCatalog={openCatalog} onOpenDownloads={() => navigate('downloads')} />
-      case 'downloads': return <DownloadsPage onBack={() => leavePage()} />
+      case 'downloads': return <DownloadsPage onBack={() => leavePage()} onOpen={openCatalog} />
       case 'playlist': return <PlaylistPage playlistId={id} onBack={() => leavePage()} onOpen={openCatalog} trackQuery={trackQuery} />
     }
   }
@@ -270,6 +277,7 @@ function AppContent() {
       {mobile
         ? !lyricsPresent && <MobileMiniPlayer lyricsOpen={false} expanded={playerExpanded} onOpen={openPlayer} />
         : <MiniPlayer lyricsOpen={lyricsOpen} onToggleLyrics={() => setLyricsOpen(open => !open)} onOpen={openCatalog} />}
+      <DownloadProgress />
     </AppWindow>
   )
 }

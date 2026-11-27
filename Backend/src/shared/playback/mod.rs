@@ -13,6 +13,7 @@ use self::{
     play_engine::{AudioSource, PlayEngine, VideoMatch},
 };
 use crate::shared::playlists::models::Track;
+use crate::pages::{downloads::store::DownloadStore, lyrics::models::LyricsResponse};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -68,6 +69,8 @@ pub struct PlaybackService {
     sources: Mutex<HashMap<String, SourceEntry>>,
     flights: Mutex<HashMap<String, Weak<AsyncMutex<()>>>>,
     intro_cache: IntroCache,
+    pub(crate) downloads: DownloadStore,
+    offline_token: String,
     workers: Arc<Semaphore>,
     origin: String,
     background_playback: AtomicBool,
@@ -97,7 +100,9 @@ impl PlaybackService {
             client,
             sources: Mutex::new(HashMap::new()),
             flights: Mutex::new(HashMap::new()),
+            downloads: DownloadStore::new(cache_dir.with_file_name("downloads-v1")),
             intro_cache: IntroCache::new(cache_dir),
+            offline_token: uuid::Uuid::new_v4().to_string(),
             workers: Arc::new(Semaphore::new(2)),
             origin: format!("http://127.0.0.1:{port}"),
             background_playback: AtomicBool::new(true),
@@ -118,6 +123,42 @@ impl PlaybackService {
     }
 
     pub async fn resolve(self: &Arc<Self>, track: Track) -> Result<PlaybackSource, String> {
+        if let Some(source) = self.offline_source(&track.spotify_id).await {
+            return Ok(source);
+        }
+        self.resolve_online(track).await
+    }
+
+    pub async fn offline_source(&self, id: &str) -> Option<PlaybackSource> {
+        let item = self.downloads.get(id).await?;
+        Some(PlaybackSource {
+            audio_url: format!("{}/offline/{}/{id}", self.origin, self.offline_token),
+            video_url: String::new(),
+            duration_seconds: item.duration_seconds,
+            intro_cached: true,
+        })
+    }
+
+    pub(crate) async fn save_audio(
+        self: &Arc<Self>,
+        track: Track,
+        lyrics: impl Future<Output = LyricsResponse>,
+        on_progress: impl Fn(u64, Option<u64>),
+    ) -> Result<(), String> {
+        let source = self.resolve_online(track.clone()).await?;
+        let audio = self.client.get(&source.audio_url)
+            .timeout(Duration::from_secs(240))
+            .send().await
+            .and_then(reqwest::Response::error_for_status)
+            .map_err(|_| "Не удалось скачать аудио.".to_string())?;
+        self.downloads.save(track, audio, source.duration_seconds, lyrics, on_progress).await
+            .map_err(|error| {
+                eprintln!("Offline audio: {error}");
+                "Не удалось скачать аудио.".to_string()
+            })
+    }
+
+    async fn resolve_online(self: &Arc<Self>, track: Track) -> Result<PlaybackSource, String> {
         let key = IntroCache::key(&track);
         if let Some(entry) = self.cached(&key) {
             if entry.source.url.is_empty() {
@@ -248,7 +289,10 @@ impl PlaybackService {
     }
 
     pub async fn prefetch(self: &Arc<Self>, track: Track) -> Result<PlaybackSource, String> {
-        let source = self.resolve(track).await?;
+        if let Some(source) = self.offline_source(&track.spotify_id).await {
+            return Ok(source);
+        }
+        let source = self.resolve_online(track).await?;
         let token = source.audio_url.rsplit('/').next().unwrap_or("");
         let entry = self.source(token).ok_or("Источник трека истёк.")?;
         self.warm_intro(&entry).await?;

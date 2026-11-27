@@ -239,6 +239,25 @@ impl LibraryStore {
         draft: PlaylistDraft,
         source: Option<(SpotifyImport, bool)>,
     ) -> Result<Playlist, String> {
+        self.create_with_contents(draft, source, &[], HashMap::new())
+    }
+
+    pub fn create_with_tracks(
+        &self,
+        draft: PlaylistDraft,
+        ids: &[String],
+        sources: HashMap<String, Track>,
+    ) -> Result<Playlist, String> {
+        self.create_with_contents(draft, None, ids, sources)
+    }
+
+    fn create_with_contents(
+        &self,
+        draft: PlaylistDraft,
+        source: Option<(SpotifyImport, bool)>,
+        ids: &[String],
+        mut sources: HashMap<String, Track>,
+    ) -> Result<Playlist, String> {
         let draft = validate_draft(draft)?;
         let _lock = self.lock()?;
         let mut data = self.read()?;
@@ -255,6 +274,22 @@ impl LibraryStore {
         };
         if let Some((source, auto_sync)) = source {
             apply_import(&mut playlist, source, auto_sync);
+        }
+        if !ids.is_empty() {
+            let requested: HashSet<_> = ids.iter().collect();
+            for track in data.playlists.iter().flat_map(|playlist| &playlist.tracks) {
+                if requested.contains(&track.spotify_id) {
+                    sources.insert(track.spotify_id.clone(), track.clone());
+                }
+            }
+            let tracks = ids.iter().map(|id| {
+                let mut track = sources.get(id).cloned()
+                    .ok_or("Обновите страницу каталога и попробуйте снова.")?;
+                track.added_at = now;
+                track.source_added_at = None;
+                Ok(track)
+            }).collect::<Result<Vec<Track>, &str>>()?;
+            append_tracks(&mut playlist, &tracks, false);
         }
         data.playlists.push(playlist.clone());
         self.save(&data)?;

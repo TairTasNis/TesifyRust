@@ -7,3 +7,4 @@ pub mod artist;
 pub mod album;
 pub mod spotify_playlist;
 pub mod settings;
+pub mod downloads;

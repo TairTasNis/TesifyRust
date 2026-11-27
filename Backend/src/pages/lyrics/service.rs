@@ -129,26 +129,25 @@ impl LyricsService {
         ))
     }
 
+    pub async fn saved_override(&self, track: &Track) -> Option<LyricsResponse> {
+        let key = Self::override_cache_key(track);
+        let stripe = usize::from_str_radix(&key[..2], 16).expect("hex digest") % self.flights.len();
+        let _flight = self.flights[stripe].lock().await;
+        if let Some(cached) = self.cache.lock().await.get(&key).filter(|c| c.expires > Instant::now()) {
+            let mut response = cached.response.clone();
+            response.custom = true;
+            return Some(response);
+        }
+        let mut response = cache::read(self.directory.clone(), &key).await?;
+        response.custom = true;
+        self.remember(key, &response).await;
+        Some(response)
+    }
+
     pub async fn get_from(&self, track: &Track, requested_source: Option<&str>) -> LyricsResponse {
         let requested_source = requested_source.map(|source| source.trim().to_ascii_lowercase());
         if requested_source.is_none() {
-            let ovr_key = Self::override_cache_key(track);
-            let stripe = usize::from_str_radix(&ovr_key[..2], 16).expect("hex digest") % self.flights.len();
-            let _flight = self.flights[stripe].lock().await;
-            if let Some(cached) = self
-                .cache
-                .lock()
-                .await
-                .get(&ovr_key)
-                .filter(|c| c.expires > Instant::now())
-            {
-                let mut res = cached.response.clone();
-                res.custom = true;
-                return res;
-            }
-            if let Some(mut response) = cache::read(self.directory.clone(), &ovr_key).await {
-                response.custom = true;
-                self.remember(ovr_key, &response).await;
+            if let Some(response) = self.saved_override(track).await {
                 return response;
             }
         }

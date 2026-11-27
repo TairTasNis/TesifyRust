@@ -1,23 +1,28 @@
 import { useTranslation } from '../../shared/preferences/i18n'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import CatalogCard from '../../shared/catalog/CatalogCard/CatalogCard'
 import TrackList from '../../shared/catalog/TrackList/TrackList'
 import { catalogTracks } from '../../shared/catalog/playback'
 import { categories, kindLabel, mergeItems } from '../../shared/catalog/types'
 import type { CatalogItem, OpenCatalog, SearchCategory, SearchResults } from '../../shared/catalog/types'
-import { errorMessage } from '../../shared/lib/backend'
+import { backend, errorMessage } from '../../shared/lib/backend'
 import { usePlayback } from '../../shared/playback/PlaybackProvider'
 import Button from '../../shared/ui/Button/Button'
 import Icon from '../../shared/ui/Icon/Icon'
 import MusicLoader from '../../shared/ui/MusicLoader/MusicLoader'
 import PlaylistCover from '../../shared/ui/PlaylistCover/PlaylistCover'
 import { cachedSearch, searchSpotify } from '../../shared/catalog/search'
+import { isShortSpotifyLink, spotifyTarget } from './spotifyLinks'
+import type { SpotifyTarget } from './spotifyLinks'
 import './SearchPage.css'
 
 export function savedSearch(): { query: string; category: SearchCategory } {
   try { const saved = JSON.parse(sessionStorage.getItem('tesify.search') || '{}'); return { query: typeof saved.query === 'string' ? saved.query.slice(0, 180) : '', category: categories.some(item => item.id === saved.category) ? saved.category : 'all' } } catch { return { query: '', category: 'all' } }
 }
-export default function SearchPage({ onOpen, mobileSearch }: { onOpen: OpenCatalog; mobileSearch?: { query: string; submitCount: number } }) {
+export default function SearchPage({ onOpen, onOpenLink, active, mobileSearch }: {
+  onOpen: OpenCatalog; onOpenLink: (target: SpotifyTarget) => void; active: boolean
+  mobileSearch?: { query: string; submitCount: number }
+}) {
   const t = useTranslation()
   const [saved] = useState(savedSearch)
   const [desktopQuery, setQuery] = useState(saved.query)
@@ -37,9 +42,36 @@ export default function SearchPage({ onOpen, mobileSearch }: { onOpen: OpenCatal
   const player = usePlayback()
   const term = query.trim()
   const submitCount = mobileSearch?.submitCount ?? 0
+  const openLink = useEffectEvent((target: SpotifyTarget) => {
+    // The outgoing search can stay mounted during the route animation.
+    if (!mobileSearch) setQuery(savedSearch().query)
+    onOpenLink(target)
+  })
   useEffect(() => {
+    if (!active) return
     const request = ++generation.current
     setResult(null); setError(null); setMore(false)
+    const direct = spotifyTarget(term)
+    if (direct) {
+      setLoading(false)
+      openLink(direct)
+      return
+    }
+    if (isShortSpotifyLink(term)) {
+      setLoading(true)
+      void backend<string>('expand_spotify_link', { link: term }, '/search/spotify/link', 'POST', { link: term })
+        .then(link => {
+          if (request !== generation.current) return
+          const target = spotifyTarget(link)
+          if (!target) throw new Error('Не удалось открыть ссылку Spotify.')
+          openLink(target)
+        }).catch(error => {
+          if (request === generation.current) setError(errorMessage(error))
+        }).finally(() => {
+          if (request === generation.current) setLoading(false)
+        })
+      return () => { ++generation.current }
+    }
     try { sessionStorage.setItem('tesify.search', JSON.stringify({ query, category })) } catch { /* Storage may be disabled. */ }
     const skipDelay = immediate.current || previousSubmit.current !== submitCount
     previousSubmit.current = submitCount
@@ -57,7 +89,7 @@ export default function SearchPage({ onOpen, mobileSearch }: { onOpen: OpenCatal
         .finally(() => { if (request === generation.current) setLoading(false) })
     }, skipDelay ? 0 : import.meta.env.MODE === 'android' ? 120 : 160)
     return () => { window.clearTimeout(timeout); ++generation.current }
-  }, [term, category, retry, submitCount])
+  }, [active, term, category, retry, submitCount])
   async function loadMore() {
     if (!result || more || category === 'all') return
     const offset = result[category].nextOffset

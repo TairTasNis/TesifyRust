@@ -1,10 +1,12 @@
 use crate::shared::{
     playlists::models::{
         BulkMembershipEdit, CollectionEdit, CollectionKind, CoverUpload, LibraryIndex, Playlist,
-        PlaylistDraft, PlaylistSummary, SavedCollection, TrackMembershipEdit, UploadedCover,
+        PlaylistDraft, PlaylistSummary, SavedCollection, Track, TrackMembershipEdit, UploadedCover,
     },
     services::AppServices,
 };
+use serde::Deserialize;
+use std::collections::HashMap;
 use tauri::State;
 
 #[tauri::command]
@@ -34,16 +36,7 @@ pub async fn edit_bulk_memberships(
     let sources = if edit.add.is_empty() {
         Default::default()
     } else {
-        edit.spotify_ids
-            .iter()
-            .filter_map(|id| {
-                services
-                    .spotify
-                    .playback_track(id)
-                    .ok()
-                    .map(|track| (id.clone(), track))
-            })
-            .collect()
+        known_tracks(services, &edit.spotify_ids).await
     };
     let library = services.library.clone();
     let wave = services.wave.clone();
@@ -120,6 +113,45 @@ pub fn create_playlist(
     draft: PlaylistDraft,
 ) -> Result<Playlist, String> {
     services.library.create(draft)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaylistWithTracks {
+    draft: PlaylistDraft,
+    spotify_ids: Vec<String>,
+}
+
+async fn known_tracks(services: &AppServices, ids: &[String]) -> HashMap<String, Track> {
+    let mut tracks = HashMap::new();
+    for id in ids {
+        let track = match services.spotify.playback_track(id) {
+            Ok(track) => Some(track),
+            Err(_) => services.playback.downloads.get(id).await.map(|item| item.track),
+        };
+        if let Some(track) = track {
+            tracks.insert(id.clone(), track);
+        }
+    }
+    tracks
+}
+
+pub async fn create_with_tracks(services: &AppServices, input: PlaylistWithTracks) -> Result<LibraryIndex, String> {
+    let sources = known_tracks(services, &input.spotify_ids).await;
+    let services = services.clone();
+    tokio::task::spawn_blocking(move || {
+        let playlist = services.library.create_with_tracks(input.draft, &input.spotify_ids, sources)?;
+        for track in playlist.tracks {
+            services.wave.remember_saved_tags(&track);
+            services.spotify.remember_library_track(track);
+        }
+        services.library.index()
+    }).await.map_err(|_| "Не удалось сохранить библиотеку. Повторите попытку.")?
+}
+
+#[tauri::command]
+pub async fn create_playlist_with_tracks(services: State<'_, AppServices>, input: PlaylistWithTracks) -> Result<LibraryIndex, String> {
+    create_with_tracks(&services, input).await
 }
 
 #[tauri::command]

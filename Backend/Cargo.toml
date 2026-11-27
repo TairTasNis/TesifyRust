@@ -1,6 +1,6 @@
 [package]
 name = "tesify"
-version = "26.11.0-dev.16"
+version = "26.11.0-dev.17"
 description = "Tesify music and playlists"
 edition = "2024"
 rust-version = "1.95"
@@ -30,7 +30,7 @@ quick-xml = "0.42"
 unicode-normalization = "0.1"
 serde_json = "1"
 sha2 = "0.10"
-tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "sync"] }
+tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "rt-multi-thread", "sync"] }
 uuid = { version = "1", features = ["v4"] }
 
 [target.'cfg(unix)'.dependencies]

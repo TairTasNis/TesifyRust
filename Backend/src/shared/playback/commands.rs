@@ -1,12 +1,21 @@
 use super::{MediaStateInput, PlaybackSource};
 use crate::shared::services::AppServices;
 use tauri::State;
+use crate::pages::downloads::commands::QUEUE_ID;
 
 pub async fn prepare(
     services: &AppServices,
     playlist_id: &str,
     track_id: &str,
 ) -> Result<PlaybackSource, String> {
+    if playlist_id == QUEUE_ID || playlist_id.starts_with("spotify:") {
+        if let Some(source) = services.playback.offline_source(track_id).await {
+            return Ok(source);
+        }
+    }
+    if playlist_id == QUEUE_ID {
+        return Err("Скачанный трек недоступен.".into());
+    }
     if playlist_id.starts_with("spotify:") {
         return services.playback.resolve(services.spotify.playback_track(track_id)?).await;
     }
@@ -24,6 +33,9 @@ pub async fn prefetch(
     playlist_id: &str,
     track_id: &str,
 ) -> Result<PlaybackSource, String> {
+    if playlist_id == QUEUE_ID {
+        return prepare(services, playlist_id, track_id).await;
+    }
     if playlist_id.starts_with("spotify:") {
         return services.playback.prefetch(services.spotify.playback_track(track_id)?).await;
     }

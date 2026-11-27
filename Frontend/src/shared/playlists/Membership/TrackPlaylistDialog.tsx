@@ -6,7 +6,9 @@ import Button from '../../ui/Button/Button'
 import Modal from '../../ui/Modal/Modal'
 import MusicLoader from '../../ui/MusicLoader/MusicLoader'
 import PlaylistCover from '../../ui/PlaylistCover/PlaylistCover'
-import type { LibraryIndex } from '../types'
+import type { LibraryIndex, PlaylistDraft } from '../types'
+import PlaylistEditor from '../PlaylistEditor/PlaylistEditor'
+import Icon from '../../ui/Icon/Icon'
 import './Membership.css'
 
 type Props = {
@@ -16,18 +18,22 @@ type Props = {
   onRetry: () => Promise<void>
   onClose: () => void
   onSave: (add: string[], remove: string[]) => Promise<void>
+  onCreate: (draft: PlaylistDraft) => Promise<void>
 }
 
-export default function TrackPlaylistDialog({ tracks, index, error, onRetry, onClose, onSave }: Props) {
+export default function TrackPlaylistDialog({ tracks, index, error, onRetry, onClose, onSave, onCreate }: Props) {
   const t = useTranslation()
   const [changes, setChanges] = useState<Record<string, boolean | undefined>>({})
   const [busy, setBusy] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
   const counts = new Map<string, number>()
   for (const track of tracks) {
     for (const id of index?.memberships[track.spotifyId] ?? []) counts.set(id, (counts.get(id) ?? 0) + 1)
   }
   const changed = (index?.playlists ?? []).filter(({ id }) => changes[id] !== undefined && (counts.get(id) ?? 0) !== (changes[id] ? tracks.length : 0))
+
+  if (creating) return <PlaylistEditor onClose={() => setCreating(false)} onSave={onCreate} />
 
   return <Modal title={t('Выбрать плейлисты')} subtitle={tracks.length === 1 ? tracks[0].title : trackCount(tracks.length)} busy={busy} onClose={onClose}>
     {(close) => <form onSubmit={async event => {
@@ -44,7 +50,8 @@ export default function TrackPlaylistDialog({ tracks, index, error, onRetry, onC
     }}>
       {!index && (error ? <div role="alert"><p>{t(error)}</p><Button type="button" variant="secondary" onClick={() => { void onRetry() }}>{t('Попробовать снова')}</Button></div>
         : <MusicLoader label={t('Загружаем библиотеку')} />)}
-      {index && (index.playlists.length ? <div className="playlist-membership-list">
+      <Button type="button" variant="secondary" disabled={busy} onClick={() => setCreating(true)}><Icon name="plus" />{t('Создать плейлист')}</Button>
+      {index && index.playlists.length > 0 && <div className="playlist-membership-list">
         {index.playlists.map(playlist => <label key={playlist.id}>
           <PlaylistCover url={playlist.coverUrl} name="" />
           <span>{playlist.name}</span>
@@ -52,7 +59,7 @@ export default function TrackPlaylistDialog({ tracks, index, error, onRetry, onC
             ref={input => { if (input) input.indeterminate = changes[playlist.id] === undefined && (counts.get(playlist.id) ?? 0) > 0 && counts.get(playlist.id) !== tracks.length }}
             onChange={event => { const checked = event.currentTarget.checked; setChanges(current => ({ ...current, [playlist.id]: checked })) }} />
         </label>)}
-      </div> : <p className="playlist-membership-empty">{t('Сначала создайте плейлист в библиотеке.')}</p>)}
+      </div>}
       {saveError && <p className="form-error" role="alert">{t(saveError)}</p>}
       <div className="modal-actions">
         <Button type="button" variant="secondary" disabled={busy} onClick={close}>{t('Отмена')}</Button>

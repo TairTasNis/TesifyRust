@@ -12,11 +12,12 @@ type Press = { id: number; x: number; y: number; timer: number }
 export function useTrackMenu(tracks: MenuTrack[]) {
   const [menu, setMenu] = useState<Menu | null>(null)
   const [selection, setSelection] = useState<Set<string>>(() => new Set())
+  const [selectAll, setSelectAll] = useState(false)
   const [selecting, setSelecting] = useState(false)
   const press = useRef<Press | null>(null)
   const held = useRef(false)
   const releaseGuard = useRef<(() => void) | null>(null)
-  const selected = tracks.filter(track => selection.has(track.id))
+  const selected = selectAll ? tracks : tracks.filter(track => selection.has(track.id))
   const all = tracks.length > 0 && selected.length === tracks.length
 
   function cancelPress() {
@@ -50,7 +51,14 @@ export function useTrackMenu(tracks: MenuTrack[]) {
 
   function clearSelection() {
     setSelection(new Set())
+    setSelectAll(false)
     setSelecting(false)
+  }
+
+  function selectTrack(track: MenuTrack) {
+    setSelection(current => current.has(track.id) ? current : new Set([...current, track.id]))
+    setSelecting(true)
+    setMenu(null)
   }
 
   useEffect(() => {
@@ -71,35 +79,44 @@ export function useTrackMenu(tracks: MenuTrack[]) {
     }
   }, [menu, selecting])
 
-  function row(track: MenuTrack) {
+  function row<Element extends HTMLElement = HTMLTableRowElement>(track: MenuTrack) {
     return {
-      'data-selected': selection.has(track.id) || undefined,
-      onContextMenu(event: MouseEvent<HTMLTableRowElement>) {
+      'data-selected': selectAll || selection.has(track.id) || undefined,
+      onContextMenu(event: MouseEvent<Element>) {
         event.preventDefault()
-        cancelPress()
         if (held.current) return
         const bounds = event.currentTarget.getBoundingClientRect()
         const touch = event.nativeEvent instanceof globalThis.PointerEvent && event.nativeEvent.pointerType === 'touch'
+        if (touch) cancelPress()
         const x = event.clientX || bounds.left + 16, y = event.clientY || bounds.top
         if (touch) openTouchMenu(track, x, y)
         else setMenu({ track, x, y, touch: false })
       },
-      onPointerDown(event: PointerEvent<HTMLTableRowElement>) {
+      onPointerDown(event: PointerEvent<Element>) {
         held.current = false
         cancelPress()
-        if (event.pointerType === 'mouse' || !event.isPrimary) return
+        const mouse = event.pointerType === 'mouse'
+        if (!event.isPrimary || (mouse && event.button !== 2)) return
         const { pointerId: id, clientX: x, clientY: y } = event
-        const timer = window.setTimeout(() => openTouchMenu(track, x, y), PRESS_MS)
+        const timer = window.setTimeout(() => {
+          press.current = null
+          if (mouse) {
+            held.current = true
+            selectTrack(track)
+          } else {
+            openTouchMenu(track, x, y)
+          }
+        }, PRESS_MS)
         press.current = { id, x, y, timer }
       },
-      onPointerMove(event: PointerEvent<HTMLTableRowElement>) {
+      onPointerMove(event: PointerEvent<Element>) {
         const start = press.current
         if (start?.id === event.pointerId && Math.hypot(event.clientX - start.x, event.clientY - start.y) > SCROLL_DISTANCE) cancelPress()
       },
       onPointerUp: cancelPress,
       onPointerCancel: cancelPress,
       onPointerLeave: cancelPress,
-      onClickCapture(event: MouseEvent<HTMLTableRowElement>) {
+      onClickCapture(event: MouseEvent<Element>) {
         if (held.current) {
           held.current = false
           event.preventDefault()
@@ -111,6 +128,7 @@ export function useTrackMenu(tracks: MenuTrack[]) {
         event.stopPropagation()
         const next = new Set(selected.map(item => item.id))
         if (!next.delete(track.id)) next.add(track.id)
+        setSelectAll(false)
         setSelection(next)
         setSelecting(true)
       },
@@ -118,17 +136,14 @@ export function useTrackMenu(tracks: MenuTrack[]) {
   }
 
   return {
-    row, menu, all, selected, selecting: selecting && tracks.length > 0,
-    targets: menu && (selection.has(menu.track.id) ? selected : [menu.track]),
+    row, menu, all, selectAll, selected, selecting: selecting && tracks.length > 0,
+    targets: menu && (selectAll || selection.has(menu.track.id) ? selected : [menu.track]),
     close: () => setMenu(null),
     clear: clearSelection,
-    start: () => {
-      if (menu) setSelection(new Set([menu.track.id]))
-      setSelecting(true)
-      setMenu(null)
-    },
+    start: () => { if (menu) selectTrack(menu.track) },
     toggleAll: () => {
-      setSelection(new Set(all ? [] : tracks.map(track => track.id)))
+      setSelection(new Set())
+      setSelectAll(!all)
       setSelecting(true)
     },
   }

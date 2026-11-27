@@ -53,10 +53,9 @@ test('only estimates a lead-in when the source omitted the previous line end', (
 })
 
 test('animates smoothly when jumping across multiple lines in either direction', () => {
-  assert.equal(shouldAnimateLyricJump(true, false, true), false)
-  assert.equal(shouldAnimateLyricJump(false, true, true), false)
-  assert.equal(shouldAnimateLyricJump(false, false, false), false)
-  assert.equal(shouldAnimateLyricJump(false, false, true), true)
+  assert.equal(shouldAnimateLyricJump(true, true), false)
+  assert.equal(shouldAnimateLyricJump(false, false), false)
+  assert.equal(shouldAnimateLyricJump(false, true), true)
 
   // Forward jump to line 7: rows <= 7 start immediately, following lines stagger by 45ms.
   assert.equal(rowStaggerDelay(5, 7, 1), 0)

@@ -1,4 +1,5 @@
 import { useTranslation } from '../../shared/preferences/i18n'
+import { useDownloads } from '../../shared/playback/downloads/DownloadsProvider'
 import { useState } from 'react'
 import type { OpenCatalog } from '../../shared/catalog/types'
 import { useLibrary } from '../../shared/playlists/Membership/LibraryProvider'
@@ -17,6 +18,7 @@ type Props = { onOpenPlaylist: (id: string) => void; onOpenCatalog: OpenCatalog;
 
 export default function LibraryPage({ onOpenPlaylist, onOpenCatalog, onOpenDownloads }: Props) {
   const t = useTranslation()
+  const downloadCount = useDownloads().tracks?.length ?? 0
   const { index, error, refresh } = useLibrary()
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState<PlaylistDraft>()
@@ -39,7 +41,7 @@ export default function LibraryPage({ onOpenPlaylist, onOpenCatalog, onOpenDownl
       <button type="button" className="library-downloads" onClick={onOpenDownloads}>
         <Icon name="import" />
         <span>{t('Скачанные треки')}</span>
-        <span className="library-download-count" aria-label={trackCount(0)}>0</span>
+        <span className="library-download-count" aria-label={trackCount(downloadCount)}>{downloadCount}</span>
         <Icon name="chevron" />
       </button>
 

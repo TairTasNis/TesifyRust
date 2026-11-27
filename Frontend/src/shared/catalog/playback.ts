@@ -8,3 +8,12 @@ export function catalogTrack(item: CatalogItem): Track {
   return { id: item.id, spotifyId: item.id, title: item.name, artist: item.subtitle, artists: item.artists,
     coverUrl: item.imageUrl, durationMs: item.durationMs, addedAt: 0, sourceAddedAt: item.addedAt, sourceUrl: `https://open.spotify.com/track/${item.id}` }
 }
+
+export function trackCatalogItem(track: Track): CatalogItem {
+  return {
+    id: track.spotifyId, kind: 'track', name: track.title, subtitle: track.artist,
+    imageUrl: track.coverUrl, color: null, artists: track.artists ?? [], durationMs: track.durationMs,
+    albumId: null, albumName: null, year: null, releaseType: null, playCount: null, addedAt: track.addedAt,
+    discNumber: null, trackNumber: null, verified: false, playable: true,
+  }
+}

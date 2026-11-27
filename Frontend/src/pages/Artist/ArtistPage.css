@@ -1,8 +1,8 @@
 .artist-hero { display: flex; min-height: 365px; flex-direction: column; justify-content: space-between; background-size: cover; background-position: center 30%; color: white; }
 .artist-hero .catalog-back { background: #0005; color: white; }
 .artist-identity { padding: 80px 27px 28px; }
-.artist-verified { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; }
-.artist-verified svg { width: 19px; height: 19px; padding: 3px; border-radius: 50%; background: #3c9dff; color: white; stroke-width: 3; }
+.artist-verified { display: inline-flex; width: 1ex; height: 1ex; margin-inline-start: .18em; align-items: center; justify-content: center; border-radius: 50%; background: #3c9dff; color: white; }
+.artist-verified svg { width: 72%; height: 72%; stroke-width: 3; }
 .artist-identity h1 { margin: 14px 0 20px; font-size: clamp(46px, 7vw, 101px); font-weight: 700; letter-spacing: -3.5px; line-height: 1.05; overflow-wrap: anywhere; }
 .artist-identity > p { margin: 0; font-size: 14px; }
 .artist-popular > h2 { margin-bottom: 17px; }
@@ -26,4 +26,4 @@
 .artist-cities strong, .artist-cities span { display: block; }
 .artist-cities span { color: var(--muted); font-size: 10px; }
 @media(max-width: 800px) { .artist-hero { min-height: 325px; } .artist-identity h1 { font-size: 59px; letter-spacing: -2px; } }
-@media(max-width: 600px) { .artist-identity { padding: 70px 17px 25px; } .artist-identity h1 { font-size: 41px; letter-spacing: -1.5px; } .artist-identity > p { font-size: 10px; } .artist-verified { font-size: 9px; } .artist-release-filters { gap: 6px; } .artist-release-filters > button { padding: 8px 10px; font-size: 10px; } .artist-about-card { min-height: 290px; padding: 20px; } .artist-cities { grid-template-columns: 1fr; } }
+@media(max-width: 600px) { .artist-identity { padding: 70px 17px 25px; } .artist-identity h1 { font-size: 41px; letter-spacing: -1.5px; } .artist-identity > p { font-size: 10px; } .artist-release-filters { gap: 6px; } .artist-release-filters > button { padding: 8px 10px; font-size: 10px; } .artist-about-card { min-height: 290px; padding: 20px; } .artist-cities { grid-template-columns: 1fr; } }

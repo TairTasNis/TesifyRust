@@ -83,6 +83,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             pages::about::commands::get_app_info,
+            pages::downloads::commands::list_downloads,
+            pages::downloads::commands::get_download_progress,
+            pages::downloads::commands::download_tracks,
             pages::library::commands::list_playlists,
             pages::library::commands::get_library_index,
             pages::library::commands::set_track_memberships,
@@ -91,6 +94,7 @@ pub fn run() {
             pages::settings::commands::get_storage_usage,
             pages::settings::commands::clear_song_previews,
             pages::library::commands::create_playlist,
+            pages::library::commands::create_playlist_with_tracks,
             pages::library::commands::delete_playlist,
             pages::library::commands::upload_playlist_cover,
             pages::lyrics::commands::get_track_lyrics,
@@ -107,6 +111,8 @@ pub fn run() {
             pages::playlist::commands::create_playlist_with_spotify,
             pages::playlist::commands::sync_spotify_playlists,
             pages::search::commands::search_spotify,
+            pages::search::commands::get_spotify_track,
+            pages::search::commands::expand_spotify_link,
             pages::artist::commands::get_spotify_artist,
             pages::artist::commands::get_spotify_artist_releases,
             pages::album::commands::get_spotify_album,

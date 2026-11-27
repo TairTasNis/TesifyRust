@@ -8,12 +8,12 @@
   isolation: isolate;
   display: flex;
   width: 100%;
-  min-height: clamp(166px, 23vw, 242px);
+  min-height: clamp(83px, 11.5vw, 121px);
   align-items: center;
   justify-content: space-between;
   gap: 16px;
   overflow: hidden;
-  padding: clamp(18px, 4.2vw, 48px);
+  padding: 8px clamp(18px, 4.2vw, 48px);
   border: 0;
   border-radius: 23px;
   background: linear-gradient(108deg, #102533 15%, #164248 100%);

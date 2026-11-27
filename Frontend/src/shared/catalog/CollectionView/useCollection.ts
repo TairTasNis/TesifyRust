@@ -9,6 +9,7 @@ export function useCollection(id: string, fetcher: (id: string, offset?: number)
   const [error, setError] = useState<string | null>(null)
   const [retry, setRetry] = useState(0)
   const generation = useRef(0)
+  const loadingPage = useRef<number | null>(null)
   useEffect(() => {
     const request = ++generation.current
     setData(null); setLoading(true); setError(null); setMore(false)
@@ -18,12 +19,16 @@ export function useCollection(id: string, fetcher: (id: string, offset?: number)
     return () => { ++generation.current }
   }, [id, fetcher, retry])
   async function loadMore() {
-    if (!data || more || data.tracks.nextOffset === null) return
     const request = generation.current
+    if (!data || more || loadingPage.current === request || data.tracks.nextOffset === null) return
+    loadingPage.current = request
     setMore(true); setError(null)
     try { const next = await fetcher(id, data.tracks.nextOffset); if (request === generation.current) setData(current => current ? { ...current, tracks: { ...next.tracks, items: [...current.tracks.items, ...next.tracks.items] } } : current) }
     catch (error) { if (request === generation.current) setError(errorMessage(error)) }
-    finally { if (request === generation.current) setMore(false) }
+    finally {
+      if (request === loadingPage.current) loadingPage.current = null
+      if (request === generation.current) setMore(false)
+    }
   }
   return { data, loading, error, more, onRetry: () => setRetry(value => value + 1), onLoadMore: () => { void loadMore() } }
 }

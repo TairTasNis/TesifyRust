@@ -18,7 +18,7 @@ type Preferences = {
   showWaveChanges: boolean
 }
 const defaults: Preferences = {
-  language: 'ru', theme: 'light', accentEnabled: false, accentColor: '#5e80cf', lyricsMode: 'letter', lyricsBackground: true,
+  language: 'en', theme: 'dark', accentEnabled: false, accentColor: '#5e80cf', lyricsMode: 'word', lyricsBackground: true,
   backgroundPlayback: true, waveOptions: { mode: 'balanced', mood: 'any' }, showWaveChanges: false,
 }
 const storageKey = 'tesify.preferences'
@@ -28,11 +28,11 @@ function readPreferences(): Preferences {
   try {
     const saved = JSON.parse(localStorage.getItem(storageKey) ?? 'null')
     return {
-      language: saved?.language === 'en' || saved?.language === 'kk' ? saved.language : 'ru',
-      theme: saved?.theme === 'dark' ? 'dark' : 'light',
+      language: saved?.language === 'ru' || saved?.language === 'kk' ? saved.language : defaults.language,
+      theme: saved?.theme === 'light' ? 'light' : defaults.theme,
       accentEnabled: saved?.accentEnabled === true,
       accentColor: typeof saved?.accentColor === 'string' && /^#[\da-f]{6}$/i.test(saved.accentColor) ? saved.accentColor : defaults.accentColor,
-      lyricsMode: saved?.lyricsMode === 'word' || saved?.lyricsMode === 'line' ? saved.lyricsMode : defaults.lyricsMode,
+      lyricsMode: saved?.lyricsMode === 'letter' || saved?.lyricsMode === 'line' ? saved.lyricsMode : defaults.lyricsMode,
       lyricsBackground: saved?.lyricsBackground !== false,
       backgroundPlayback: saved?.backgroundPlayback !== false,
       waveOptions: {

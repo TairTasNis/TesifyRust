@@ -9,6 +9,7 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 
 #[derive(Clone)]
 pub struct AppServices {
+    pub(crate) download_job: Arc<crate::pages::downloads::commands::DownloadJob>,
     pub library: Arc<LibraryStore>,
     pub data_dir: PathBuf,
     pub http: reqwest::Client,
@@ -44,6 +45,7 @@ impl AppServices {
         )?;
         let library = Arc::new(LibraryStore::new(config.data_dir.clone())?);
         Ok(Self {
+            download_job: Arc::default(),
             wave: WaveService::new(http.clone(), config.lastfm_api_key, &config.data_dir, &library),
             lyrics: crate::pages::lyrics::service::LyricsService::with_cache(
                 http.clone(), config.lyrics, config.data_dir.join("lyrics-v1"),

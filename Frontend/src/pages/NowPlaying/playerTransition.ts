@@ -78,8 +78,11 @@ function movePlayer(page: HTMLElement, opening: boolean) {
   overlay.className = 'player-transition-layer'
   overlay.inert = true
   overlay.setAttribute('aria-hidden', 'true')
-  const copies = layers.map(layer => ({ ...layer, copy: makeCopy(layer.original) }))
-  overlay.append(...copies.map(({ copy }) => copy))
+  const copies = layers.map(layer => ({
+    ...layer, copy: layer.original.kind === 'text' && !layer.compact ? null : makeCopy(layer.original),
+  }))
+  overlay.append(...copies.flatMap(({ copy }) => copy ? [copy] : []))
+  const slideHeight = page.getBoundingClientRect().height
   const animations: Animation[] = []
   function animate(node: HTMLElement, frames: Keyframe[], curve = 'linear') {
     animations.push(node.animate(opening ? frames : frames.slice().reverse().map(frame => ({
@@ -92,14 +95,19 @@ function movePlayer(page: HTMLElement, opening: boolean) {
   animate(page, [{ transform: playerSlide.below }, { transform: playerSlide.visible }], timing.easing)
 
   for (const { original, other, compact, copy } of copies) {
-    original.node.dataset.playerMoving = ''
-    const projected = `translate3d(${other.x - original.x}px, ${other.y - original.y}px, 0) scale(${other.size / original.size})`
+    if (copy) original.node.dataset.playerMoving = ''
+    // Fullscreen text keeps its live font metrics and wrapping through the final frame.
+    // Its parent slides by the same distance and easing, so offset that movement at the mini endpoint.
+    const node = copy ?? original.node
+    const projected = `translate3d(${other.x - original.x}px, ${other.y - original.y - (copy ? 0 : slideHeight)}px, 0) scale(${other.size / original.size})`
     const native = 'translate3d(0, 0, 0) scale(1)'
-    animate(copy, compact ? [{ transform: native }, { transform: projected }] : [{ transform: projected }, { transform: native }], timing.easing)
+    const origin = `${original.x - original.bounds.left}px 50%`
+    animate(node, compact ? [{ transform: native }, { transform: projected }]
+      : [{ transform: projected, transformOrigin: origin }, { transform: native, transformOrigin: origin }], timing.easing)
     // Keep a solid surface as the cover and play button change size and shape.
     const compactFade = original.kind === 'text' ? .16 : .36
     const expandedFade = original.kind === 'text' ? .46 : .36
-    animate(copy, compact
+    animate(node, compact
       ? [{ opacity: 1 }, { opacity: 1, offset: compactFade }, { opacity: 0, offset: .52 }, { opacity: 0 }]
       : [{ opacity: 0 }, { opacity: 0, offset: .10 }, { opacity: 1, offset: expandedFade }, { opacity: 1 }])
   }

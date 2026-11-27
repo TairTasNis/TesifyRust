@@ -5,8 +5,17 @@ use super::{
 use crate::shared::{playlists::models::Track, services::AppServices};
 use tauri::State;
 
-fn resolve_track(services: &AppServices, playlist_id: &str, track_id: &str) -> Result<Track, String> {
-    if playlist_id.starts_with("spotify:") {
+use crate::pages::downloads::commands::QUEUE_ID;
+
+async fn resolve_track(services: &AppServices, playlist_id: &str, track_id: &str) -> Result<Track, String> {
+    if playlist_id == QUEUE_ID || playlist_id.starts_with("spotify:") {
+        if let Some(item) = services.playback.downloads.get(track_id).await {
+            return Ok(item.track);
+        }
+    }
+    if playlist_id == QUEUE_ID {
+        Err("Скачанный трек недоступен.".into())
+    } else if playlist_id.starts_with("spotify:") {
         services.spotify.playback_track(track_id)
     } else {
         services
@@ -25,7 +34,12 @@ pub async fn get(
     track_id: &str,
     source: Option<&str>,
 ) -> Result<LyricsResponse, String> {
-    let track = resolve_track(services, playlist_id, track_id)?;
+    let track = resolve_track(services, playlist_id, track_id).await?;
+    if source.is_none() {
+        if let Some(response) = services.playback.downloads.lyrics(&track.spotify_id).await {
+            return Ok(services.lyrics.saved_override(&track).await.unwrap_or(response));
+        }
+    }
     Ok(services.lyrics.get_from(&track, source).await)
 }
 
@@ -39,7 +53,7 @@ pub async fn apply_candidate(
     track_id: &str,
     candidate_id: &str,
 ) -> Result<LyricsResponse, String> {
-    let track = resolve_track(services, playlist_id, track_id)?;
+    let track = resolve_track(services, playlist_id, track_id).await?;
     services.lyrics.apply_candidate(&track, candidate_id).await
 }
 
@@ -49,7 +63,7 @@ pub async fn apply_spotify_track(
     track_id: &str,
     spotify_track_id: &str,
 ) -> Result<LyricsResponse, String> {
-    let target = resolve_track(services, playlist_id, track_id)?;
+    let target = resolve_track(services, playlist_id, track_id).await?;
     let source = services.spotify.playback_track(spotify_track_id)?;
     services.lyrics.apply_from_other_track(&target, &source).await
 }
@@ -59,7 +73,7 @@ pub async fn clear_override(
     playlist_id: &str,
     track_id: &str,
 ) -> Result<LyricsResponse, String> {
-    let track = resolve_track(services, playlist_id, track_id)?;
+    let track = resolve_track(services, playlist_id, track_id).await?;
     services.lyrics.clear_override(&track).await;
     Ok(services.lyrics.get_from(&track, None).await)
 }

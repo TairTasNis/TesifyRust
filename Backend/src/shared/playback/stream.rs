@@ -13,6 +13,7 @@ use axum::{
     routing::get,
 };
 use std::sync::Arc;
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
 type StreamResult = Result<Response, (StatusCode, &'static str)>;
 const START_CHUNK_SIZE: u64 = 128 * 1024;
@@ -21,6 +22,7 @@ pub(super) fn router(service: Arc<PlaybackService>) -> Router {
     let expected_host = service.origin.trim_start_matches("http://").to_string();
     Router::new()
         .route("/audio/{token}", get(audio))
+        .route("/offline/{token}/{id}", get(offline_audio))
         .layer(middleware::from_fn(move |request: Request, next: Next| {
             let expected_host = expected_host.clone();
             async move {
@@ -39,6 +41,46 @@ pub(super) fn router(service: Arc<PlaybackService>) -> Router {
             }
         }))
         .with_state(service)
+}
+
+async fn offline_audio(
+    State(service): State<Arc<PlaybackService>>,
+    Path((token, id)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> StreamResult {
+    let not_found = (StatusCode::NOT_FOUND, "Скачанный трек недоступен.");
+    if token != service.offline_token {
+        return Err(not_found);
+    }
+    let item = service.downloads.get(&id).await.ok_or(not_found)?;
+    let requested = AudioRange::parse(headers.get(header::RANGE).and_then(|value| value.to_str().ok()));
+    let Some((start, end)) = requested.and_then(|range| range.bounds(item.bytes)) else {
+        return Ok(Response::builder()
+            .status(StatusCode::RANGE_NOT_SATISFIABLE)
+            .header(header::CONTENT_RANGE, format!("bytes */{}", item.bytes))
+            .body(Body::empty()).expect("valid response"));
+    };
+    let length = end - start + 1;
+    let mut file = tokio::fs::File::open(service.downloads.audio_path(&id)).await.map_err(|_| not_found)?;
+    file.seek(std::io::SeekFrom::Start(start)).await.map_err(|_| not_found)?;
+    let stream = futures_util::stream::try_unfold((file, length), |(mut file, remaining)| async move {
+        if remaining == 0 {
+            return Ok::<_, std::io::Error>(None);
+        }
+        let mut buffer = vec![0; remaining.min(START_CHUNK_SIZE) as usize];
+        file.read_exact(&mut buffer).await?;
+        Ok(Some((buffer, (file, remaining - remaining.min(START_CHUNK_SIZE)))))
+    });
+    let mut response = Response::builder()
+        .header(header::CONTENT_TYPE, item.content_type)
+        .header(header::CONTENT_LENGTH, length)
+        .header(header::ACCEPT_RANGES, "bytes");
+    if requested != Some(AudioRange::Full) {
+        response = response
+            .status(StatusCode::PARTIAL_CONTENT)
+            .header(header::CONTENT_RANGE, format!("bytes {start}-{end}/{}", item.bytes));
+    }
+    response.body(Body::from_stream(stream)).map_err(|_| not_found)
 }
 
 pub(super) async fn request_chunk(
@@ -335,6 +377,84 @@ mod tests {
             .header(header::CONTENT_LENGTH, end - start + 1)
             .body(Body::from(data[start..=end].to_vec()))
             .unwrap()
+    }
+
+    #[tokio::test]
+    async fn downloads_audio_and_lyrics_then_seeks_after_restart_without_upstream() {
+        use crate::pages::lyrics::models::{Line, Lyrics, LyricsResponse, Word};
+        use crate::shared::{playback::intro_cache::tests::TemporaryCache, playlists::models::Track};
+
+        let directory = TemporaryCache::new();
+        let previews = directory.0.join("previews");
+        let data = Arc::new(vec![5; 200_019]);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let upstream = format!("http://{}/file", listener.local_addr().unwrap());
+        let app = Router::new().route("/file", get(strict_cdn)).with_state(data.clone());
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client = reqwest::Client::new();
+        let engine = PlayEngine::new().with_yt_dlp(directory.0.join("missing-tool.exe"));
+        let service = PlaybackService::new(client.clone(), engine.clone(), previews.clone()).unwrap();
+        let track = Track {
+            id: "playlist-entry".into(),
+            spotify_id: "1234567890abcdefghijkl".into(),
+            title: "Song".into(),
+            artist: "Artist".into(),
+            artists: Vec::new(),
+            cover_url: None,
+            duration_ms: Some(10_000),
+            added_at: 0,
+            source_added_at: None,
+            source_url: String::new(),
+        };
+        let key = super::super::IntroCache::key(&track);
+        service.sources.lock().unwrap().insert(key.clone(), SourceEntry {
+            key,
+            token: "download-source".into(),
+            video: super::super::intro_cache::tests::sample().video,
+            source: AudioSource {
+                url: upstream,
+                headers: HashMap::new(),
+                content_type: "audio/mp4".into(),
+                duration_seconds: Some(10.),
+                format_id: Some("140".into()),
+                filesize: Some(data.len() as u64),
+            },
+            created: Instant::now(),
+            intro: Arc::new(std::sync::OnceLock::new()),
+            source_lock: Arc::default(),
+            warm_lock: Arc::default(),
+            warming: Arc::default(),
+        });
+        service.save_audio(track.clone(), async {
+            LyricsResponse {
+                status: "found".into(),
+                lyrics: Some(Lyrics {
+                    source: "test".into(), source_url: String::new(), sync: "word".into(),
+                    source_duration_ms: None, exact_track: false,
+                    lines: vec![Line { text: "Hello".into(), start: 1.0, end: 1.7, end_inferred: false,
+                        words: vec![Word { text: "Hello".into(), start: 1.0, end: 1.7 }],
+                    }],
+                }),
+                custom: false,
+            }
+        }, |_, _| {}).await.unwrap();
+        task.abort();
+
+        let restarted = PlaybackService::new(client.clone(), engine, previews).unwrap();
+        let downloaded = restarted.downloads.list().await.unwrap();
+        assert_eq!(downloaded.len(), 1);
+        assert_eq!(downloaded[0].id, track.spotify_id);
+        let lyrics = restarted.downloads.lyrics(&track.spotify_id).await.unwrap().lyrics.unwrap();
+        assert_eq!(lyrics.lines[0].words[0].text, "Hello");
+        let prepared = restarted.resolve(track).await.unwrap();
+        assert!(prepared.audio_url.contains("/offline/"));
+        let full = client.get(&prepared.audio_url).send().await.unwrap();
+        assert_eq!(full.status(), 200);
+        assert_eq!(full.bytes().await.unwrap().as_ref(), data.as_slice());
+        let tail = client.get(&prepared.audio_url).header(header::RANGE, "bytes=-16").send().await.unwrap();
+        assert_eq!(tail.status(), 206);
+        assert_eq!(tail.headers()[header::CONTENT_RANGE], "bytes 200003-200018/200019");
+        assert_eq!(tail.bytes().await.unwrap().as_ref(), &[5; 16]);
     }
 
     #[tokio::test]

@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { errorMessage } from '../../lib/backend'
+import { downloadsQueueId, useDownloads } from '../../playback/downloads/DownloadsProvider'
 import { useLibrary } from '../../playlists/Membership/LibraryProvider'
 import { trackCount } from '../../playlists/format'
 import { useTranslation } from '../../preferences/i18n'
@@ -11,11 +12,12 @@ import type { OpenCatalog } from '../types'
 import type { useTrackMenu } from './useTrackMenu'
 import './TrackMenu.css'
 
-export default function TrackMenu({ state, onOpen, playlistId }: {
-  state: ReturnType<typeof useTrackMenu>; onOpen: OpenCatalog; playlistId?: string
+export default function TrackMenu({ state, onOpen, playlistId, queueId, selectingMore = false }: {
+  state: ReturnType<typeof useTrackMenu>; onOpen: OpenCatalog; playlistId?: string; queueId: string; selectingMore?: boolean
 }) {
   const t = useTranslation()
   const { index, choosePlaylists, changeMemberships } = useLibrary()
+  const downloads = useDownloads()
   const [artistTrack, setArtistTrack] = useState<typeof state.menu>(null)
   const [error, setError] = useState<string | null>(null)
   const panel = useRef<HTMLDivElement>(null)
@@ -45,6 +47,7 @@ export default function TrackMenu({ state, onOpen, playlistId }: {
   const available = (tracks: typeof state.selected) => [...new Map(tracks.filter(track => track.spotifyId && track.canSave !== false).map(track => [track.spotifyId, track])).values()]
   const menuTracks = available(targets ?? [])
   const selectedTracks = available(state.selected)
+  const newDownloads = (tracks: typeof selectedTracks) => tracks.filter(track => !downloads.ids.has(track.spotifyId))
   const actionLabel = (tracks: typeof selectedTracks) => playlistId || (tracks.length && tracks.every(track => index?.memberships[track.spotifyId]?.length))
     ? 'Удалить из плейлиста' : 'Добавить в плейлист'
 
@@ -67,21 +70,30 @@ export default function TrackMenu({ state, onOpen, playlistId }: {
     else setArtistTrack(menu)
   }
 
+  function download(tracks: typeof selectedTracks) {
+    state.close()
+    setError(null)
+    void downloads.download(queueId, newDownloads(tracks).map(track => track.id))
+      .then(state.clear).catch(error => setError(errorMessage(error)))
+  }
+
   const actions = <>
     <button type="button" onClick={state.start}><Icon name="check" />{t('Выбрать треки')}</button>
     <button type="button" onClick={() => { state.toggleAll(); state.close() }}><Icon name="check" />{t(state.all ? 'Снять выделение' : 'Выделить всё')}</button>
-    <button type="button" disabled={!menuTracks.length} onClick={() => changePlaylists(menuTracks)}><Icon name={actionLabel(menuTracks) === 'Добавить в плейлист' ? 'plus' : 'trash'} />{t(actionLabel(menuTracks))}</button>
+    <button type="button" disabled={selectingMore || !menuTracks.length} onClick={() => changePlaylists(menuTracks)}><Icon name={actionLabel(menuTracks) === 'Добавить в плейлист' ? 'plus' : 'trash'} />{t(actionLabel(menuTracks))}</button>
+    {queueId !== downloadsQueueId && <button type="button" disabled={selectingMore || downloads.busy || !newDownloads(menuTracks).length} onClick={() => download(menuTracks)}><Icon name="import" />{t('Скачать')}</button>}
     <button type="button" disabled={!menu?.track.artists?.length && !menu?.track.artist.trim()} onClick={showArtist}><Icon name="artist" />{t('Об исполнителе')}</button>
   </>
 
   return <>
     {state.selecting && <div className="track-selection" role="group" aria-label={t('Выбрать треки')}>
       <button type="button" className="track-selection-close" aria-label={t('Выйти из режима выбора')} onClick={state.clear}><Icon name="close" /></button>
-      <span className="track-selection-count" aria-live="polite">{trackCount(state.selected.length)}</span>
+      <span className="track-selection-count" aria-live="polite">{selectingMore ? t('Загружаем треки') : trackCount(state.selected.length)}</span>
       <button type="button" onClick={state.toggleAll}>{t(state.all ? 'Снять выделение' : 'Выделить всё')}</button>
-      <button type="button" disabled={!selectedTracks.length} aria-label={t(actionLabel(selectedTracks))} onClick={() => changePlaylists(selectedTracks)}>
+      <button type="button" disabled={selectingMore || !selectedTracks.length} aria-label={t(actionLabel(selectedTracks))} onClick={() => changePlaylists(selectedTracks)}>
         <Icon name={actionLabel(selectedTracks) === 'Добавить в плейлист' ? 'plus' : 'trash'} />{t(playlistId ? 'Удалить' : actionLabel(selectedTracks))}
       </button>
+      {queueId !== downloadsQueueId && <button type="button" disabled={selectingMore || downloads.busy || !newDownloads(selectedTracks).length} onClick={() => download(selectedTracks)}><Icon name="import" />{t('Скачать')}</button>}
     </div>}
     {menu && (menu.touch ? <Modal title={menu.track.title} onClose={state.close}><div className="track-menu-actions">{actions}</div></Modal>
       : createPortal(<div className="track-menu-actions track-menu-popover" ref={panel} role="group" aria-label={menu.track.title}

@@ -34,8 +34,8 @@ export function wordProgress(time: number, start: number, end: number) {
   return Math.max(0, Math.min(1, (time - start) / Math.max(.001, end - start)))
 }
 
-export function shouldAnimateLyricJump(firstPosition: boolean, isCountdown: boolean, canAnimateNow: boolean) {
-  return !firstPosition && !isCountdown && canAnimateNow
+export function shouldAnimateLyricJump(firstPosition: boolean, canAnimateNow: boolean) {
+  return !firstPosition && canAnimateNow
 }
 
 export function rowStaggerDelay(index: number, lead: number, direction: 1 | -1) {

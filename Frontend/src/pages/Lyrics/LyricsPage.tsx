@@ -363,8 +363,7 @@ function LyricStage({ lyrics, offset, mode, mobile, followPlayback }: {
       : current.offsetTop - view.clientHeight * .32
     const nextOffset = -target
     const direction: 1 | -1 = previousOffset.current !== null && nextOffset > previousOffset.current ? -1 : 1
-    const cue = cues[active]
-    const smooth = shouldAnimateLyricJump(firstPosition.current, Boolean(cue && 'countdown' in cue), canAnimate())
+    const smooth = shouldAnimateLyricJump(firstPosition.current, canAnimate())
     moveRows(rows.current, nextOffset, mobile, smooth ? active : undefined, direction)
     firstPosition.current = false
     previousOffset.current = nextOffset
@@ -430,9 +429,12 @@ function LyricStage({ lyrics, offset, mode, mobile, followPlayback }: {
           const isActive = timed && i === active
           const past = timed && i < active
           const canSeek = timed && !player.error && player.duration > 0
-          if ('countdown' in line) return <div key={`gap/${line.end}`} className="lyrics-line lyrics-line--countdown" ref={node => { rows.current[i] = node }} aria-hidden={!isActive}>
-            {isActive && seconds > 0 && <span role="timer" aria-label={t("До следующей строки {0} сек.", seconds)}>{formatDuration(seconds * 1000)}</span>}
-          </div>
+          if ('countdown' in line) {
+            const remaining = isActive ? seconds : past ? 0 : Math.ceil(line.end - Math.max(0, line.start))
+            return <div key={`gap/${line.end}`} className="lyrics-line lyrics-line--countdown" ref={node => { rows.current[i] = node }} aria-hidden={!isActive} data-active={isActive}>
+              <span className="lyrics-line-content" role="timer" aria-label={t("До следующей строки {0} сек.", remaining)}>{remaining > 0 ? formatDuration(remaining * 1000) : '0:00'}</span>
+            </div>
+          }
           return <button type="button" ref={(node) => { rows.current[i] = node }} key={`${i}/${line.start}`} className="lyrics-line" dir="auto"
             aria-current={isActive ? 'true' : undefined} aria-disabled={!canSeek} tabIndex={canSeek ? 0 : -1}
             onClick={() => seekLine(i)} onFocus={() => { if (document.documentElement.dataset.input === 'keyboard') browse() }}
